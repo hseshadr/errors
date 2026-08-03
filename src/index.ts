@@ -14,7 +14,12 @@ export {
   defineErrorsWith,
   UnregisteredFallbackError,
 } from "./registry.js";
-export { starterPack } from "./starter-pack.js";
+export {
+  aiPack,
+  bundlePack,
+  corePack,
+  starterPack,
+} from "./starter-pack.js";
 export type {
   Catalog,
   CatalogEntry,
