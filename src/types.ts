@@ -13,10 +13,10 @@ import type { CanonicalError } from "./canonical-error.js";
 export type ErrorCode = string;
 
 /**
- * How a failure should be treated by UI + telemetry: retry vs. "open Settings"
- * vs. "free up space", etc.
+ * The seven categories this library ships with. They are suggestions, not a
+ * closed set — see {@link Category}.
  */
-export type Category =
+export type KnownCategory =
   | "provider"
   | "config"
   | "network"
@@ -24,6 +24,18 @@ export type Category =
   | "device"
   | "integrity"
   | "internal";
+
+/**
+ * How a failure should be treated by UI + telemetry: retry vs. "open Settings"
+ * vs. "free up space", etc.
+ *
+ * Open by design. The {@link KnownCategory} members are documented suggestions
+ * and still autocomplete in an editor, but any string is valid so a consumer can
+ * add `auth`, `validation` or `billing` without patching this library. The
+ * `Record<never, never>` intersection is the idiom that keeps the literal
+ * suggestions visible instead of collapsing the union to plain `string`.
+ */
+export type Category = KnownCategory | (string & Record<never, never>);
 
 /** A value that may be interpolated into an error description. */
 export type ParamValue = string | number;

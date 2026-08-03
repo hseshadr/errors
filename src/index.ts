@@ -20,6 +20,7 @@ export type {
   CatalogEntry,
   Category,
   ErrorCode,
+  KnownCategory,
   MatchRule,
   Params,
   ParamsFor,
