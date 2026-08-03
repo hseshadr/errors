@@ -25,20 +25,20 @@ const isUnreachableFailure = (raw: unknown): boolean =>
   httpStatusOf(raw) === undefined && NETWORK_TEXT.test(errorTextOf(raw));
 
 /**
- * The 18 universal error codes (`ai.*`, `net.*`, `bundle.*`, `config.*`,
- * `internal`), transcribed from `errors-registry.json`. It is an OPTIONAL
- * starter pack, not a mandate: a site may `defineErrors({ ...starterPack,
- * ...ownCodes })` to avoid re-declaring the common ones, then add its own.
+ * The 18 original error codes (`ai.*`, `net.*`, `bundle.*`, `config.*`,
+ * `internal`). It is an OPTIONAL starter pack, not a mandate: a site may
+ * `defineErrors({ ...starterPack, ...ownCodes })` to avoid re-declaring the
+ * common ones, then add its own.
  *
- * On top of the registry data, three codes carry the AlmaMesh-proven `match`
- * rules for the failures that have no HTTP status: an aborted/timed-out request,
- * a fetch/network failure, and a pre-egress privacy block.
+ * Three codes carry `match` rules for the failures that have no HTTP status: an
+ * aborted/timed-out request, a fetch/network failure, and a pre-egress privacy
+ * block.
  *
  * FROZEN. Three product repos vendor a byte-identical copy of this library and
  * build their catalogs by spreading individual entries out of this object, so
  * its codes, English and rule order are a compatibility surface: changing them
  * would change three shipped UIs on the next re-vendor. It is also, honestly,
- * an AI/WASM catalog wearing a generic name — 10 of the 18 codes are `ai.*` or
+ * an AI/WASM catalog wearing a generic name — 14 of the 18 codes are `ai.*` or
  * `bundle.*`, three hardcode another app's "Settings → AI", and
  * `ai.privacy.violation` string-couples to `@edgeproc/privacy-core`. New work
  * should reach for {@link corePack} / {@link aiPack} / {@link bundlePack}
