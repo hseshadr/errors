@@ -9,11 +9,14 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       // types.ts is type-only (no runtime); index.ts is a re-export barrel.
       exclude: ["src/types.ts", "src/index.ts"],
-      // ENGINEERING-STANDARDS §2 TypeScript floor (mirrors @edgeproc/privacy-core).
+      // The whole library is ~200 lines of pure logic with no I/O, so every
+      // line and branch is reachable from a plain unit test. 100% is the bar
+      // the README advertises; keeping it enforced here means the two agree.
       thresholds: {
-        lines: 90,
-        functions: 90,
-        branches: 85,
+        statements: 100,
+        lines: 100,
+        functions: 100,
+        branches: 100,
       },
     },
   },

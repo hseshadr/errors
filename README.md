@@ -7,13 +7,15 @@ No more the-same-402-says-three-different-things.
 
 It is thin glue over two mature standards, not a new framework:
 
-- **[i18next](https://www.i18next.com/)** owns the human descriptions (you pass
-  in its `t` — it stays an _optional_ peer, never bundled).
+- **[i18next](https://www.i18next.com/)** owns the human descriptions. You hand
+  `describe()` your own `t` function. This package never imports i18next, so
+  i18next is not a dependency of any kind — anything shaped like
+  `t(key, params)` works, including a five-line stand-in.
 - **[RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457)** owns the
   wire shape.
 
-Zero runtime dependencies. The only new code is ~200 lines: register a catalog,
-and classify a raw failure into a code.
+Zero dependencies: no runtime deps, no peer deps. The only new code is ~200
+lines: register a catalog, and classify a raw failure into a code.
 
 ## The problem, in one line
 
@@ -21,15 +23,42 @@ The same HTTP `402` becomes _"out of credits"_ in Settings and a misleading
 _"check your model and endpoint"_ in chat, because each `catch` block
 re-invents the message. This collapses that N-way drift to one answer.
 
-## Quickstart — run it now
+## Install
 
 ```bash
-# Node >= 22.13 and pnpm. From the repo root:
-pnpm install && pnpm demo
+pnpm add @edgeproc/errors    # or: npm i @edgeproc/errors
 ```
 
-You'll see a raw `402` classified into `ai.provider.out_of_credits`, rendered in
-English and Spanish, and serialized to RFC 9457 — the exact loop below.
+Needs Node >= 22.13. Nothing to configure.
+
+## Quickstart
+
+Paste this into a file and run it:
+
+```ts
+import { defineErrors, starterPack } from "@edgeproc/errors";
+
+const errors = defineErrors({ ...starterPack });
+
+// A raw failure from anywhere — fetch, an SDK, a thrown DOMException.
+const code = errors.classify({ status: 402, message: "Insufficient credits" });
+
+console.log(code);
+// "ai.provider.out_of_credits"
+
+console.log(errors.describe(code));
+// "Your provider account is out of credits. Add credits and try again."
+```
+
+That is the whole idea: one raw failure in, one stable code out, one description
+your app can translate.
+
+Want the full loop — register, classify, render in two languages, serialize to
+RFC 9457? Clone this repo and run the demo:
+
+```bash
+pnpm install && pnpm demo   # builds, then runs examples/quickstart.mjs
+```
 
 ### Register your errors
 
@@ -85,7 +114,7 @@ throw errors.create("bundle.quota_exceeded", { requiredBytes: 5_000_000 });
 ## What `classify` knows out of the box
 
 Duck-typed from the raw failure (`.status`, `.name`, `.message`/`.body`), with
-the AlmaMesh-proven mappings pre-loaded and `internal.unknown` as the fallback:
+these mappings pre-loaded and `internal.unknown` as the fallback:
 
 | Raw failure                            | Code                          |
 | -------------------------------------- | ----------------------------- |
@@ -134,14 +163,21 @@ the same rule engine.
   client we adopt its _shape_ as a clean envelope. The real payoff is a backend
   emitting it verbatim.
 
-Design spec: `project-ideas/docs/superpowers/specs/2026-07-13-canonical-errors-design.md`.
-Optional starter catalog: `project-ideas/errors-registry.json`.
+A full runnable walkthrough — register, classify, translate, serialize — lives in
+[`examples/quickstart.mjs`](./examples/quickstart.mjs).
 
 ## Develop
 
 ```bash
-pnpm gate   # lint (biome) + typecheck (tsc) + test (vitest, 100% cov) + build
+pnpm gate   # lint (biome) + typecheck (tsc) + test (vitest) + build
 ```
+
+`pnpm gate` is the exact command CI runs. Coverage is enforced at 100% of
+statements, branches, functions and lines — see
+[`vitest.config.ts`](./vitest.config.ts).
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) to send a change, and
+[SECURITY.md](./SECURITY.md) to report a vulnerability.
 
 ## License
 
