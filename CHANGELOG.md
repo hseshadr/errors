@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-03
+
+**The code is byte-identical to 0.1.0. Nothing was added, fixed, or removed.**
+What changes is where the artifact came from, and that is the entire point of
+this release.
+
+0.1.0 was published by hand from a laptop, so it carries **no provenance
+attestation** — nothing cryptographically ties that tarball to this repository
+or to the commit it was built from. That was unavoidable rather than careless:
+npm has no "pending publisher" state, so a package name must already exist
+before a trusted publisher can attach to it. The first publish of any name
+therefore cannot use OIDC. And a published version is immutable, so 0.1.0
+cannot be re-published later to add provenance.
+
+0.1.1 is the first release through the trusted-publisher rail
+(`hseshadr/errors` → `publish.yml`, registered 2026-08-03). It is signed into
+npm's transparency log by GitHub's OIDC token, with no credential stored in this
+repository.
+
+**Why a patch and not a minor.** No capability shipped, so a minor bump would
+overstate it. More usefully, consumers already on `^0.1.0` pick this up on their
+next install with no code change — `^0.1.0` resolves `>=0.1.1 <0.2.0` — which is
+exactly the propagation an attested build wants. A 0.2.0 would have required a
+manual bump in three repositories to deliver nothing but metadata.
+
+Verify it yourself:
+
+```sh
+npm view @edgeproc/errors@0.1.1 dist.attestations
+```
+
+That must print a `predicateType` of `https://slsa.dev/provenance/v1`. It prints
+empty **and exits 0** when provenance is absent, so read the value, not the exit
+code.
+
 ## [0.1.0] - 2026-08-02
 
 First public release.
