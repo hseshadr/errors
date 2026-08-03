@@ -13,10 +13,10 @@ import type { CanonicalError } from "./canonical-error.js";
 export type ErrorCode = string;
 
 /**
- * How a failure should be treated by UI + telemetry: retry vs. "open Settings"
- * vs. "free up space", etc.
+ * The seven categories this library ships with. They are suggestions, not a
+ * closed set — see {@link Category}.
  */
-export type Category =
+export type KnownCategory =
   | "provider"
   | "config"
   | "network"
@@ -24,6 +24,18 @@ export type Category =
   | "device"
   | "integrity"
   | "internal";
+
+/**
+ * How a failure should be treated by UI + telemetry: retry vs. "open Settings"
+ * vs. "free up space", etc.
+ *
+ * Open by design. The {@link KnownCategory} members are documented suggestions
+ * and still autocomplete in an editor, but any string is valid so a consumer can
+ * add `auth`, `validation` or `billing` without patching this library. The
+ * `Record<never, never>` intersection is the idiom that keeps the literal
+ * suggestions visible instead of collapsing the union to plain `string`.
+ */
+export type Category = KnownCategory | (string & Record<never, never>);
 
 /** A value that may be interpolated into an error description. */
 export type ParamValue = string | number;
@@ -55,16 +67,46 @@ export interface CatalogEntry {
   readonly i18nKey?: string;
   /** HTTP statuses that `classify` maps to this code. */
   readonly httpStatus?: readonly number[];
+  /**
+   * An inclusive `[min, max]` HTTP status range claimed by this code, e.g.
+   * `[500, 599]` for "any server error". Consulted only after the exact
+   * `httpStatus` table, so a code that names a specific status still wins.
+   */
+  readonly httpStatusRange?: readonly [number, number];
   /** Problem Details `type` URI (defaults to the code itself). */
   readonly problemType?: string;
   /** Default English — the fallback when i18n has no localized string. */
   readonly en?: string;
   /** A custom `classify` predicate; wins over `httpStatus`. */
   readonly match?: MatchRule;
+  /**
+   * Order among `match` predicates: higher runs first. Defaults to `0`, which
+   * is plain registration order.
+   *
+   * This is the escape hatch from the `{ ...starterPack, ...ownCodes }` trap: a
+   * spread puts the starter pack's broad rules FIRST, so a broad
+   * `/timeout|timed out/i` rule claims `"db timeout after 30s"` before your own
+   * `db.query.timeout` rule ever runs. Give your rule `priority: 10` (or mark a
+   * deliberately broad rule negative, as `corePack` does) and the specific one
+   * wins.
+   */
+  readonly priority?: number;
 }
 
 /** A map of code -> entry. Each site declares and owns its own. */
 export type Catalog = Readonly<Record<string, CatalogEntry>>;
+
+/** Registry-wide settings, passed to `defineErrorsWith`. */
+export interface RegistryOptions {
+  /**
+   * The code `classify` returns when nothing else claims the raw failure.
+   * Defaults to `internal.unknown`. `defineErrorsWith` requires it to be a code
+   * your catalog actually registers — a fallback that is not in your own
+   * registry is a configuration error, and it is cheaper to catch here than to
+   * discover as `{"type":"internal.unknown"}` on the wire.
+   */
+  readonly fallbackCode?: ErrorCode;
+}
 
 /** The param names declared by an entry, as a string-literal union. */
 type ParamNamesOf<E> = E extends { readonly params: readonly (infer P)[] }
@@ -118,7 +160,7 @@ export interface Registry<C extends Catalog = Catalog> {
   has(code: string): boolean;
   /** The entry for a code, or `undefined`. */
   get(code: string): CatalogEntry | undefined;
-  /** Turn a raw transport/LLM failure into a code (fallback `internal.unknown`). */
+  /** Turn a raw transport/LLM failure into a code (this registry's fallback). */
   classify(raw: unknown): ErrorCode;
 
   /** Resolve the human text for a code via i18n, falling back to English. */

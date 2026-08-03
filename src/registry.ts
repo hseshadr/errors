@@ -10,12 +10,28 @@ import type {
   ProblemDetails,
   ProblemOptions,
   Registry,
+  RegistryOptions,
   TFunction,
 } from "./types.js";
 
-/** The last-resort code every catalog should register (the starter pack does). */
-const INTERNAL_UNKNOWN = "internal.unknown";
+/** The last-resort code a registry uses when it configures no other. */
+export const DEFAULT_FALLBACK_CODE = "internal.unknown";
 const PLACEHOLDER = /\{(\w+)\}/g;
+
+/**
+ * Thrown by `defineErrorsWith` when the fallback code is not registered in the
+ * catalog. `classify` would then return a code the registry does not contain —
+ * `has()` false, `get()` undefined, `describe()` echoing the raw key, and the
+ * bare key shipped as the Problem Details `type` and `title`.
+ */
+export class UnregisteredFallbackError extends Error {
+  constructor(code: string) {
+    super(
+      `Fallback code "${code}" is not registered in this catalog. classify() would return a code this registry does not contain.`,
+    );
+    this.name = "UnregisteredFallbackError";
+  }
+}
 
 /** Replace `{name}` placeholders in a default-English template. */
 function interpolate(
@@ -27,14 +43,37 @@ function interpolate(
   );
 }
 
-function collectMatchers(
-  map: Catalog,
-): ReadonlyArray<readonly [string, MatchRule]> {
-  const matchers: Array<readonly [string, MatchRule]> = [];
+interface Matcher {
+  readonly code: string;
+  readonly match: MatchRule;
+  readonly priority: number;
+}
+
+/**
+ * Match rules in the order `classify` runs them: highest `priority` first,
+ * registration order within a tie. The default priority is 0, so a catalog that
+ * declares no priorities keeps plain registration order.
+ */
+function collectMatchers(map: Catalog): ReadonlyArray<Matcher> {
+  const matchers: Matcher[] = [];
   for (const [code, entry] of Object.entries(map)) {
-    if (entry.match) matchers.push([code, entry.match]);
+    const match = entry.match;
+    if (match) matchers.push({ code, match, priority: entry.priority ?? 0 });
   }
-  return matchers;
+  // Array.prototype.sort is stable, which is what preserves registration order.
+  return matchers.sort((a, b) => b.priority - a.priority);
+}
+
+/** Inclusive `[min, max]` status ranges, in registration order. */
+function collectStatusRanges(
+  map: Catalog,
+): ReadonlyArray<readonly [string, readonly [number, number]]> {
+  const ranges: Array<readonly [string, readonly [number, number]]> = [];
+  for (const [code, entry] of Object.entries(map)) {
+    const range = entry.httpStatusRange;
+    if (range) ranges.push([code, range]);
+  }
+  return ranges;
 }
 
 /** First code registered for a status wins — codes are stable, not last-writer. */
@@ -70,25 +109,73 @@ function mergeCatalogs(fragments: readonly Catalog[]): Catalog {
 export function defineErrors<const C extends Catalog>(catalog: C): Registry<C>;
 export function defineErrors(...fragments: Catalog[]): Registry<Catalog>;
 export function defineErrors(...fragments: Catalog[]): Registry<Catalog> {
-  return createRegistry(mergeCatalogs(fragments));
+  return createRegistry(mergeCatalogs(fragments), DEFAULT_FALLBACK_CODE);
 }
 
-function createRegistry<C extends Catalog>(catalog: C): Registry<C> {
+/**
+ * `defineErrors` with registry-wide options in front — today, the fallback code
+ * `classify` returns when nothing matches.
+ *
+ * Options come first so the fragment list stays variadic and unambiguous:
+ * `defineErrorsWith({ fallbackCode: "shop.unknown" }, ownCodes)`.
+ *
+ * Unlike `defineErrors`, this entry point VALIDATES the fallback: it must be a
+ * code the merged catalog registers, or it throws
+ * {@link UnregisteredFallbackError}. Opting into options is opting into the
+ * check.
+ */
+export function defineErrorsWith<const C extends Catalog>(
+  options: RegistryOptions,
+  catalog: C,
+): Registry<C>;
+export function defineErrorsWith(
+  options: RegistryOptions,
+  ...fragments: Catalog[]
+): Registry<Catalog>;
+export function defineErrorsWith(
+  options: RegistryOptions,
+  ...fragments: Catalog[]
+): Registry<Catalog> {
+  const catalog = mergeCatalogs(fragments);
+  const fallbackCode = options.fallbackCode ?? DEFAULT_FALLBACK_CODE;
+  if (!Object.hasOwn(catalog, fallbackCode)) {
+    throw new UnregisteredFallbackError(fallbackCode);
+  }
+  return createRegistry(catalog, fallbackCode);
+}
+
+function createRegistry<C extends Catalog>(
+  catalog: C,
+  fallbackCode: ErrorCode,
+): Registry<C> {
   const map: Catalog = catalog;
   const codes = Object.keys(map);
   const matchers = collectMatchers(map);
   const statusIndex = buildStatusIndex(map);
+  const statusRanges = collectStatusRanges(map);
 
+  /** First registered range containing `status` — the tier below the exact table. */
+  function codeForStatusRange(status: number): string | undefined {
+    for (const [code, [min, max]] of statusRanges) {
+      if (status >= min && status <= max) return code;
+    }
+    return undefined;
+  }
+
+  /**
+   * Precedence, in order: `match` predicates (by priority, then registration),
+   * the exact `httpStatus` table, then `httpStatusRange`, then the fallback.
+   */
   function classify(raw: unknown): ErrorCode {
-    for (const [code, match] of matchers) {
+    for (const { code, match } of matchers) {
       if (match(raw)) return code;
     }
     const status = httpStatusOf(raw);
     if (status !== undefined) {
-      const byStatus = statusIndex.get(status);
+      const byStatus = statusIndex.get(status) ?? codeForStatusRange(status);
       if (byStatus !== undefined) return byStatus;
     }
-    return INTERNAL_UNKNOWN;
+    return fallbackCode;
   }
 
   function describe(code: ErrorCode, params?: Params, t?: TFunction): string {
