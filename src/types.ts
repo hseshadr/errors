@@ -67,12 +67,30 @@ export interface CatalogEntry {
   readonly i18nKey?: string;
   /** HTTP statuses that `classify` maps to this code. */
   readonly httpStatus?: readonly number[];
+  /**
+   * An inclusive `[min, max]` HTTP status range claimed by this code, e.g.
+   * `[500, 599]` for "any server error". Consulted only after the exact
+   * `httpStatus` table, so a code that names a specific status still wins.
+   */
+  readonly httpStatusRange?: readonly [number, number];
   /** Problem Details `type` URI (defaults to the code itself). */
   readonly problemType?: string;
   /** Default English — the fallback when i18n has no localized string. */
   readonly en?: string;
   /** A custom `classify` predicate; wins over `httpStatus`. */
   readonly match?: MatchRule;
+  /**
+   * Order among `match` predicates: higher runs first. Defaults to `0`, which
+   * is plain registration order.
+   *
+   * This is the escape hatch from the `{ ...starterPack, ...ownCodes }` trap: a
+   * spread puts the starter pack's broad rules FIRST, so a broad
+   * `/timeout|timed out/i` rule claims `"db timeout after 30s"` before your own
+   * `db.query.timeout` rule ever runs. Give your rule `priority: 10` (or mark a
+   * deliberately broad rule negative, as `corePack` does) and the specific one
+   * wins.
+   */
+  readonly priority?: number;
 }
 
 /** A map of code -> entry. Each site declares and owns its own. */

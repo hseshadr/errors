@@ -43,14 +43,37 @@ function interpolate(
   );
 }
 
-function collectMatchers(
-  map: Catalog,
-): ReadonlyArray<readonly [string, MatchRule]> {
-  const matchers: Array<readonly [string, MatchRule]> = [];
+interface Matcher {
+  readonly code: string;
+  readonly match: MatchRule;
+  readonly priority: number;
+}
+
+/**
+ * Match rules in the order `classify` runs them: highest `priority` first,
+ * registration order within a tie. The default priority is 0, so a catalog that
+ * declares no priorities keeps plain registration order.
+ */
+function collectMatchers(map: Catalog): ReadonlyArray<Matcher> {
+  const matchers: Matcher[] = [];
   for (const [code, entry] of Object.entries(map)) {
-    if (entry.match) matchers.push([code, entry.match]);
+    const match = entry.match;
+    if (match) matchers.push({ code, match, priority: entry.priority ?? 0 });
   }
-  return matchers;
+  // Array.prototype.sort is stable, which is what preserves registration order.
+  return matchers.sort((a, b) => b.priority - a.priority);
+}
+
+/** Inclusive `[min, max]` status ranges, in registration order. */
+function collectStatusRanges(
+  map: Catalog,
+): ReadonlyArray<readonly [string, readonly [number, number]]> {
+  const ranges: Array<readonly [string, readonly [number, number]]> = [];
+  for (const [code, entry] of Object.entries(map)) {
+    const range = entry.httpStatusRange;
+    if (range) ranges.push([code, range]);
+  }
+  return ranges;
 }
 
 /** First code registered for a status wins — codes are stable, not last-writer. */
@@ -129,14 +152,27 @@ function createRegistry<C extends Catalog>(
   const codes = Object.keys(map);
   const matchers = collectMatchers(map);
   const statusIndex = buildStatusIndex(map);
+  const statusRanges = collectStatusRanges(map);
 
+  /** First registered range containing `status` — the tier below the exact table. */
+  function codeForStatusRange(status: number): string | undefined {
+    for (const [code, [min, max]] of statusRanges) {
+      if (status >= min && status <= max) return code;
+    }
+    return undefined;
+  }
+
+  /**
+   * Precedence, in order: `match` predicates (by priority, then registration),
+   * the exact `httpStatus` table, then `httpStatusRange`, then the fallback.
+   */
   function classify(raw: unknown): ErrorCode {
-    for (const [code, match] of matchers) {
+    for (const { code, match } of matchers) {
       if (match(raw)) return code;
     }
     const status = httpStatusOf(raw);
     if (status !== undefined) {
-      const byStatus = statusIndex.get(status);
+      const byStatus = statusIndex.get(status) ?? codeForStatusRange(status);
       if (byStatus !== undefined) return byStatus;
     }
     return fallbackCode;
