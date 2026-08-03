@@ -10,12 +10,28 @@ import type {
   ProblemDetails,
   ProblemOptions,
   Registry,
+  RegistryOptions,
   TFunction,
 } from "./types.js";
 
-/** The last-resort code every catalog should register (the starter pack does). */
-const INTERNAL_UNKNOWN = "internal.unknown";
+/** The last-resort code a registry uses when it configures no other. */
+export const DEFAULT_FALLBACK_CODE = "internal.unknown";
 const PLACEHOLDER = /\{(\w+)\}/g;
+
+/**
+ * Thrown by `defineErrorsWith` when the fallback code is not registered in the
+ * catalog. `classify` would then return a code the registry does not contain —
+ * `has()` false, `get()` undefined, `describe()` echoing the raw key, and the
+ * bare key shipped as the Problem Details `type` and `title`.
+ */
+export class UnregisteredFallbackError extends Error {
+  constructor(code: string) {
+    super(
+      `Fallback code "${code}" is not registered in this catalog. classify() would return a code this registry does not contain.`,
+    );
+    this.name = "UnregisteredFallbackError";
+  }
+}
 
 /** Replace `{name}` placeholders in a default-English template. */
 function interpolate(
@@ -70,10 +86,45 @@ function mergeCatalogs(fragments: readonly Catalog[]): Catalog {
 export function defineErrors<const C extends Catalog>(catalog: C): Registry<C>;
 export function defineErrors(...fragments: Catalog[]): Registry<Catalog>;
 export function defineErrors(...fragments: Catalog[]): Registry<Catalog> {
-  return createRegistry(mergeCatalogs(fragments));
+  return createRegistry(mergeCatalogs(fragments), DEFAULT_FALLBACK_CODE);
 }
 
-function createRegistry<C extends Catalog>(catalog: C): Registry<C> {
+/**
+ * `defineErrors` with registry-wide options in front — today, the fallback code
+ * `classify` returns when nothing matches.
+ *
+ * Options come first so the fragment list stays variadic and unambiguous:
+ * `defineErrorsWith({ fallbackCode: "shop.unknown" }, ownCodes)`.
+ *
+ * Unlike `defineErrors`, this entry point VALIDATES the fallback: it must be a
+ * code the merged catalog registers, or it throws
+ * {@link UnregisteredFallbackError}. Opting into options is opting into the
+ * check.
+ */
+export function defineErrorsWith<const C extends Catalog>(
+  options: RegistryOptions,
+  catalog: C,
+): Registry<C>;
+export function defineErrorsWith(
+  options: RegistryOptions,
+  ...fragments: Catalog[]
+): Registry<Catalog>;
+export function defineErrorsWith(
+  options: RegistryOptions,
+  ...fragments: Catalog[]
+): Registry<Catalog> {
+  const catalog = mergeCatalogs(fragments);
+  const fallbackCode = options.fallbackCode ?? DEFAULT_FALLBACK_CODE;
+  if (!Object.hasOwn(catalog, fallbackCode)) {
+    throw new UnregisteredFallbackError(fallbackCode);
+  }
+  return createRegistry(catalog, fallbackCode);
+}
+
+function createRegistry<C extends Catalog>(
+  catalog: C,
+  fallbackCode: ErrorCode,
+): Registry<C> {
   const map: Catalog = catalog;
   const codes = Object.keys(map);
   const matchers = collectMatchers(map);
@@ -88,7 +139,7 @@ function createRegistry<C extends Catalog>(catalog: C): Registry<C> {
       const byStatus = statusIndex.get(status);
       if (byStatus !== undefined) return byStatus;
     }
-    return INTERNAL_UNKNOWN;
+    return fallbackCode;
   }
 
   function describe(code: ErrorCode, params?: Params, t?: TFunction): string {

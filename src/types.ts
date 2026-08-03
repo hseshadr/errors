@@ -66,6 +66,18 @@ export interface CatalogEntry {
 /** A map of code -> entry. Each site declares and owns its own. */
 export type Catalog = Readonly<Record<string, CatalogEntry>>;
 
+/** Registry-wide settings, passed to `defineErrorsWith`. */
+export interface RegistryOptions {
+  /**
+   * The code `classify` returns when nothing else claims the raw failure.
+   * Defaults to `internal.unknown`. `defineErrorsWith` requires it to be a code
+   * your catalog actually registers — a fallback that is not in your own
+   * registry is a configuration error, and it is cheaper to catch here than to
+   * discover as `{"type":"internal.unknown"}` on the wire.
+   */
+  readonly fallbackCode?: ErrorCode;
+}
+
 /** The param names declared by an entry, as a string-literal union. */
 type ParamNamesOf<E> = E extends { readonly params: readonly (infer P)[] }
   ? P extends string
@@ -118,7 +130,7 @@ export interface Registry<C extends Catalog = Catalog> {
   has(code: string): boolean;
   /** The entry for a code, or `undefined`. */
   get(code: string): CatalogEntry | undefined;
-  /** Turn a raw transport/LLM failure into a code (fallback `internal.unknown`). */
+  /** Turn a raw transport/LLM failure into a code (this registry's fallback). */
   classify(raw: unknown): ErrorCode;
 
   /** Resolve the human text for a code via i18n, falling back to English. */

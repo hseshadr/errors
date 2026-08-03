@@ -8,7 +8,12 @@
 
 export { CanonicalError, DuplicateCodeError } from "./canonical-error.js";
 export { errorNameOf, errorTextOf, httpStatusOf } from "./raw.js";
-export { defineErrors } from "./registry.js";
+export {
+  DEFAULT_FALLBACK_CODE,
+  defineErrors,
+  defineErrorsWith,
+  UnregisteredFallbackError,
+} from "./registry.js";
 export { starterPack } from "./starter-pack.js";
 export type {
   Catalog,
@@ -22,5 +27,6 @@ export type {
   ProblemDetails,
   ProblemOptions,
   Registry,
+  RegistryOptions,
   TFunction,
 } from "./types.js";
