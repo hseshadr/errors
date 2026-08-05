@@ -92,6 +92,44 @@ describe("GitHub Actions token scope", () => {
   });
 });
 
+// A secret is the one defect you cannot fix by reverting: once a credential is
+// in the public history it is burned, and a revert only hides it from `HEAD`.
+// So the scan has to run BEFORE the merge, on the pull request, not on a weekly
+// sweep that finds it days later. This repo had no secret scan at all — it
+// pinned ci's `ts-publish.yml` and nothing else, so no `gitleaks` check ever
+// reported here and branch protection had nothing to require.
+//
+// This rule asserts the WIRING, which is the part that silently rots: a private
+// or misconfigured reusable workflow makes caller runs VANISH rather than go
+// red, so "the job is in the file" is the only thing a unit test can prove.
+// That the scan actually CATCHES a secret is proven separately, by planting one
+// and watching the check go red on a real PR.
+describe("secret scanning", () => {
+  const SECRET_SCAN = "hseshadr/ci/.github/workflows/secret-scan.yml";
+
+  const secretScanRefs = (): readonly string[] =>
+    readWorkflows()
+      .flatMap(refsOf)
+      .map((entry) => entry.split(": ")[1] ?? "")
+      .filter((ref) => ref.startsWith(`${SECRET_SCAN}@`));
+
+  it("calls ci's reusable secret-scan brick", () => {
+    expect(secretScanRefs()).not.toEqual([]);
+  });
+
+  it("pins the secret-scan brick to a commit SHA, never a tag", () => {
+    // `@ci-v3` would resolve at run time to whatever that tag points at today.
+    // The scan holds this repo's token; a mutable ref here is a supply chain.
+    const unpinned = secretScanRefs().filter((ref) => !isImmutable(ref));
+    expect(unpinned).toEqual([]);
+  });
+
+  it("runs the scan on pull requests, where a merge can still be stopped", () => {
+    const ci = readWorkflows().find(({ file }) => file === "ci.yml");
+    expect(ci?.yaml).toMatch(/^on:(?:.|\n)*?^\s+pull_request:/m);
+  });
+});
+
 describe("the pin rule itself", () => {
   it.each([
     ["a moving major tag", "actions/checkout@v5"],
