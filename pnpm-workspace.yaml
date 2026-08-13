@@ -1,6 +1,11 @@
 packages:
   - "."
 
+# Refuse dependency releases younger than 24 hours. This gives registries and
+# maintainers time to withdraw a compromised release before CI installs it.
+# Keep strict mode implicit: do not add an exclusion list or set it false.
+minimumReleaseAge: 1440
+
 onlyBuiltDependencies:
   - "@biomejs/biome"
   - esbuild

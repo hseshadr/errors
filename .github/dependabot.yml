@@ -1,0 +1,20 @@
+# Weekly, grouped discovery only. Dependabot PRs still require normal review.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      npm-toolchain:
+        patterns:
+          - "*"

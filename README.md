@@ -364,6 +364,10 @@ pnpm gate   # lint (biome) + typecheck (tsc) + test (vitest) + build
 statements, branches, functions and lines — see
 [`vitest.config.ts`](./vitest.config.ts).
 
+Installs use a 24-hour quarantine for new package releases and a native-build
+allowlist limited to Biome and esbuild. CI, the weekly audit, and publishing all
+use those same pnpm controls; no workflow can bypass them.
+
 See [CONTRIBUTING.md](./CONTRIBUTING.md) to send a change, and
 [SECURITY.md](./SECURITY.md) to report a vulnerability.
 
