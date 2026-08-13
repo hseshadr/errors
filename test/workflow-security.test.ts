@@ -176,6 +176,17 @@ describe("dependency security audit", () => {
     expect(readme).toContain("24-hour quarantine");
     expect(readme).toMatch(/native-build\s+allowlist/);
   });
+
+  it("states the package boundary before the catalog reference", () => {
+    const readme = readFileSync(README, "utf8");
+    const limits = readme.indexOf("## Scope and limits");
+    const catalogs = readme.indexOf("## Which pack should you start from?");
+
+    expect(limits).toBeGreaterThan(0);
+    expect(limits).toBeLessThan(catalogs);
+    expect(readme).toContain("does not log, retry, or report errors for you");
+    expect(readme).toContain("No roadmap feature is implied");
+  });
 });
 
 describe("the pin rule itself", () => {

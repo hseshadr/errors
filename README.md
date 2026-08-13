@@ -60,6 +60,17 @@ RFC 9457? Clone this repo and run the demo:
 pnpm install && pnpm demo   # builds, then runs examples/quickstart.mjs
 ```
 
+## Scope and limits
+
+Shipped today: a zero-runtime-dependency catalog, classifier, description helper, and
+RFC 9457 serializer. It does not log, retry, or report errors for you; your application
+owns those policies and supplies its own translation function. It also cannot infer a
+business-specific cause unless your catalog declares the matching rule.
+
+There is no hosted service or hidden global registry. No roadmap feature is implied by
+the interfaces in this package; future behavior belongs in the changelog before it is
+documented as available.
+
 ## Which pack should you start from?
 
 The package ships four catalogs. They are optional starting points, not a
