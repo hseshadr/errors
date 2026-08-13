@@ -16,7 +16,7 @@
 // `pnpm/action-setup@v6`, `actions/setup-node@v5`) and nothing that could notice.
 // Each rule below is paired with its own accept/reject cases so the rule itself
 // is proven, not assumed.
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -24,6 +24,13 @@ import { describe, expect, it } from "vitest";
 const WORKFLOWS = fileURLToPath(
   new URL("../.github/workflows", import.meta.url),
 );
+const WORKSPACE = fileURLToPath(
+  new URL("../pnpm-workspace.yaml", import.meta.url),
+);
+const DEPENDABOT = fileURLToPath(
+  new URL("../.github/dependabot.yml", import.meta.url),
+);
+const README = fileURLToPath(new URL("../README.md", import.meta.url));
 
 /** Matches `uses: <ref>` / `- uses: <ref>`, stopping before a trailing comment. */
 const USES = /^\s*(?:-\s*)?uses:\s*([^\s#]+)/gm;
@@ -127,6 +134,47 @@ describe("secret scanning", () => {
   it("runs the scan on pull requests, where a merge can still be stopped", () => {
     const ci = readWorkflows().find(({ file }) => file === "ci.yml");
     expect(ci?.yaml).toMatch(/^on:(?:.|\n)*?^\s+pull_request:/m);
+  });
+});
+
+describe("dependency security audit", () => {
+  it("runs pnpm audit on a schedule and on demand", () => {
+    const audit = readWorkflows().find(
+      ({ file }) => file === "security-audit.yml",
+    );
+    expect(audit?.yaml).toMatch(/^on:(?:.|\n)*?^\s+schedule:/m);
+    expect(audit?.yaml).toMatch(/^on:(?:.|\n)*?^\s+workflow_dispatch:/m);
+    expect(audit?.yaml).toContain("pnpm audit --audit-level low");
+  });
+
+  it("never bypasses pnpm's native-build allowlist", () => {
+    const bypasses = readWorkflows()
+      .filter(({ yaml }) => yaml.includes("dangerously-allow-all-builds"))
+      .map(({ file }) => file);
+    expect(bypasses).toEqual([]);
+  });
+
+  it("quarantines newly published packages for 24 hours without escape hatches", () => {
+    const workspace = readFileSync(WORKSPACE, "utf8");
+    expect(workspace).toMatch(/^minimumReleaseAge: 1440$/m);
+    expect(workspace).not.toMatch(/^minimumReleaseAgeExclude:/m);
+    expect(workspace).not.toMatch(/^minimumReleaseAgeStrict: false$/m);
+  });
+
+  it("discovers npm and GitHub Actions updates every week", () => {
+    expect(existsSync(DEPENDABOT)).toBe(true);
+    const config = readFileSync(DEPENDABOT, "utf8");
+    const ecosystems = [
+      ...config.matchAll(/package-ecosystem:\s*([^\s]+)/g),
+    ].map((match) => match[1]);
+    expect(ecosystems).toEqual(["github-actions", "npm"]);
+    expect(config.match(/interval:\s*weekly/g)).toHaveLength(2);
+  });
+
+  it("documents the install-time supply-chain controls", () => {
+    const readme = readFileSync(README, "utf8");
+    expect(readme).toContain("24-hour quarantine");
+    expect(readme).toMatch(/native-build\s+allowlist/);
   });
 });
 

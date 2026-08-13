@@ -58,10 +58,9 @@ jobs:
     with:
       working-directory: "."
       node-version: "24"
-      # Mirrors ci.yml exactly. allow-all-builds lets the trusted toolchain binaries (biome,
-      # esbuild) run their postinstall non-interactively; without it pnpm blocks and the
-      # install hangs rather than failing loudly.
-      install-args: "--frozen-lockfile --config.dangerously-allow-all-builds=true"
+      # Mirrors ci.yml exactly. pnpm-workspace.yaml names the only dependencies
+      # allowed to run install-time builds.
+      install-args: "--frozen-lockfile"
       # The gate is lint -> typecheck -> vitest (100% coverage enforced) -> build, with no
       # browser dependency, so re-running it from the TAGGED ref is cheap and is the only
       # thing that proves the artefact being published is the artefact that passed.

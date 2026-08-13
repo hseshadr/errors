@@ -60,9 +60,8 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        # dangerously-allow-all-builds lets the trusted toolchain binaries
-        # (biome, esbuild) build non-interactively in CI.
-        run: pnpm install --frozen-lockfile --config.dangerously-allow-all-builds=true
+        # pnpm-workspace.yaml names the only dependencies allowed to run builds.
+        run: pnpm install --frozen-lockfile
 
       - name: Gate (the exact local command — CI mirrors the gate)
         run: pnpm gate
