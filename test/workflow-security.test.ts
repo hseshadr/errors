@@ -130,6 +130,17 @@ describe("secret scanning", () => {
   });
 });
 
+describe("dependency security audit", () => {
+  it("runs pnpm audit on a schedule and on demand", () => {
+    const audit = readWorkflows().find(
+      ({ file }) => file === "security-audit.yml",
+    );
+    expect(audit?.yaml).toMatch(/^on:(?:.|\n)*?^\s+schedule:/m);
+    expect(audit?.yaml).toMatch(/^on:(?:.|\n)*?^\s+workflow_dispatch:/m);
+    expect(audit?.yaml).toContain("pnpm audit --audit-level low");
+  });
+});
+
 describe("the pin rule itself", () => {
   it.each([
     ["a moving major tag", "actions/checkout@v5"],
