@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Canonical Error Runtime Architecture",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/hseshadr/errors",
+      "revision": "0f7cebfae900cb8a1df1069e90d44a2fbd829657"
+    },
+    "viewBox": [1360, 700],
+    "views": [
+      {
+        "id": "classification-path",
+        "label": "Classification path",
+        "focus": ["raw-failure", "shape-readers", "registry", "stable-code", "consumer-output"],
+        "note": "Turn an unknown runtime failure into one stable code and consumer-owned output."
+      },
+      {
+        "id": "catalog-contract",
+        "label": "Catalog contract",
+        "focus": ["catalogs", "registry", "stable-code", "canonical-error"],
+        "note": "Per-app catalogs define typed params, categories, matching rules, and a validated fallback."
+      },
+      {
+        "id": "human-and-wire",
+        "label": "Human and wire forms",
+        "focus": ["stable-code", "translation", "consumer-output"],
+        "note": "One code becomes localized text or an RFC 9457 Problem Details envelope."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "raw-failure",
+      "type": "external",
+      "label": "Raw Failure",
+      "sublabel": "Error · response · string",
+      "pos": [30, 300],
+      "size": [150, 76],
+      "sources": [
+        {"path": "README.md", "line": 124, "end_line": 137, "label": "Consumer boundary"}
+      ]
+    },
+    {
+      "id": "shape-readers",
+      "type": "backend",
+      "label": "Defensive Shape Readers",
+      "sublabel": "status · name · message / body",
+      "tag": "duck typed",
+      "pos": [280, 300],
+      "size": [180, 80],
+      "sources": [
+        {"path": "src/raw.ts", "line": 1, "end_line": 37, "label": "Raw failure helpers"}
+      ]
+    },
+    {
+      "id": "registry",
+      "type": "backend",
+      "label": "Per-app Registry",
+      "sublabel": "deterministic precedence",
+      "tag": "no global state",
+      "pos": [560, 300],
+      "size": [180, 80],
+      "sources": [
+        {"path": "src/registry.ts", "line": 147, "end_line": 179, "label": "Classifier"},
+        {"path": "README.md", "line": 217, "end_line": 228, "label": "Precedence contract"}
+      ]
+    },
+    {
+      "id": "stable-code",
+      "type": "database",
+      "label": "Stable Error Code",
+      "sublabel": "code + category + params",
+      "tag": "namespaced identity",
+      "pos": [840, 300],
+      "size": [180, 80],
+      "sources": [
+        {"path": "src/types.ts", "line": 1, "end_line": 44, "label": "Canonical data contract"},
+        {"path": "README.md", "line": 347, "end_line": 360, "label": "Stable identity rules"}
+      ]
+    },
+    {
+      "id": "consumer-output",
+      "type": "frontend",
+      "label": "Consumer Output",
+      "sublabel": "localized text · RFC 9457",
+      "tag": "app-owned policy",
+      "pos": [1120, 300],
+      "size": [180, 80],
+      "sources": [
+        {"path": "src/registry.ts", "line": 181, "end_line": 209, "label": "Describe and serialize"},
+        {"path": "src/types.ts", "line": 129, "end_line": 150, "label": "Problem Details"},
+        {"path": "README.md", "line": 63, "end_line": 72, "label": "Scope boundary"}
+      ]
+    },
+    {
+      "id": "catalogs",
+      "type": "database",
+      "label": "Catalog Fragments",
+      "sublabel": "core · AI · bundle · app codes",
+      "tag": "typed parameters",
+      "pos": [560, 80],
+      "size": [180, 78],
+      "sources": [
+        {"path": "src/starter-pack.ts", "line": 148, "end_line": 221, "label": "Domain-neutral core"},
+        {"path": "src/starter-pack.ts", "line": 223, "end_line": 288, "label": "Optional AI pack"},
+        {"path": "README.md", "line": 74, "end_line": 103, "label": "Pack selection"}
+      ]
+    },
+    {
+      "id": "translation",
+      "type": "external",
+      "label": "App Translation Function",
+      "sublabel": "t(key, params)",
+      "tag": "i18next-shaped",
+      "pos": [1120, 80],
+      "size": [180, 78],
+      "sources": [
+        {"path": "src/types.ts", "line": 46, "end_line": 55, "label": "Translation boundary"},
+        {"path": "README.md", "line": 8, "end_line": 18, "label": "Optional integration"}
+      ]
+    },
+    {
+      "id": "canonical-error",
+      "type": "backend",
+      "label": "CanonicalError",
+      "sublabel": "known-cause throw path",
+      "tag": "greppable code",
+      "pos": [840, 510],
+      "size": [180, 80],
+      "sources": [
+        {"path": "src/canonical-error.ts", "line": 3, "end_line": 22, "label": "Coded error class"},
+        {"path": "src/registry.ts", "line": 211, "end_line": 224, "label": "Registry create path"}
+      ]
+    }
+  ],
+  "connections": [
+    {"id": "raw-readers", "from": "raw-failure", "to": "shape-readers", "label": "unknown value", "variant": "emphasis"},
+    {"id": "readers-registry", "from": "shape-readers", "to": "registry", "label": "failure signals"},
+    {"id": "catalogs-registry", "from": "catalogs", "to": "registry", "label": "rules + fallback", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [650, 172]},
+    {"id": "registry-code", "from": "registry", "to": "stable-code", "label": "first matching code", "variant": "emphasis"},
+    {"id": "code-output", "from": "stable-code", "to": "consumer-output", "label": "render / wire"},
+    {"id": "translation-output", "from": "translation", "to": "consumer-output", "label": "localized string", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [1210, 172]},
+    {"id": "code-error", "from": "stable-code", "to": "canonical-error", "label": "create known cause", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [930, 394]}
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Thin integration layer",
+      "items": [
+        "Zero runtime dependencies and no hosted service or hidden global registry",
+        "Applications compose only the catalog fragments and domain codes they need"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Deterministic classification",
+      "items": [
+        "Priority matchers run first, then exact status, status range, and registered fallback",
+        "Duplicate codes and invalid configured fallbacks fail at registry construction"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Consumer-owned behavior",
+      "items": [
+        "The package classifies and serializes; the application owns logging, retries, reporting, and UI policy",
+        "Human text comes from the app translation function with catalog English as fallback"
+      ]
+    }
+  ]
+}
