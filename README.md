@@ -365,6 +365,10 @@ Types: `Catalog`, `CatalogEntry`, `Category`, `KnownCategory`, `ErrorCode`,
 A full runnable walkthrough — register, classify, translate, serialize — lives in
 [`examples/quickstart.mjs`](./examples/quickstart.mjs).
 
+## Architecture
+
+Explore the [interactive runtime map](docs/architecture/index.html).
+
 ## Develop
 
 ```bash
