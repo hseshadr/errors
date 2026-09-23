@@ -179,8 +179,9 @@ describe("dependency security audit", () => {
 
   it("states the package boundary before the catalog reference", () => {
     const readme = readFileSync(README, "utf8");
-    const limits = readme.indexOf("## Scope and limits");
-    const catalogs = readme.indexOf("## Which pack should you start from?");
+    // The first screen's "Not for" line is the boundary (README template).
+    const limits = readme.indexOf("- **Not for** — ");
+    const catalogs = readme.indexOf("### Which pack should you start from?");
 
     expect(limits).toBeGreaterThan(0);
     expect(limits).toBeLessThan(catalogs);

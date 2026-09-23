@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **README follows the portfolio template.** A plain-language first screen
+  (tagline, "At a glance", a real `classify({ status: 402 })` example with its
+  pasted output), with the full reference kept below it. The npm `description`
+  now equals the README tagline.
+
+### Added
+
+- `examples/out-of-credits.mjs`, the README's runnable example.
+- `test/readme.contract.test.ts`, which keeps the README's first screen in
+  shape: tagline equals the package description, at most four badges, the six
+  "At a glance" labels, section order, the architecture-map link, and every
+  relative link resolving.
+
 ## [0.1.2] - 2026-09-23
 
 ### Fixed
