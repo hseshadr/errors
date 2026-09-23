@@ -2,68 +2,188 @@
 #
 # npm release of `@edgeproc/errors` via OIDC Trusted Publishing. Pushing a `v*` tag is the
 # whole trigger. There is NO npm write token in this repository, and there must never be one:
-# the credential is a short-lived OIDC token GitHub mints for this job, which npm verifies
-# against a trusted publisher registered as {hseshadr, errors, publish.yml}.
+# the credential is a short-lived OIDC token GitHub mints for the `publish` job below, which
+# npm verifies against the trusted publisher registered as {hseshadr, errors, publish.yml}.
+#
+# THE FILE NAME IS LOAD-BEARING. npm binds the trusted publisher to this workflow's filename,
+# so renaming this file silently turns every future release into a 404/ENEEDAUTH. The
+# publisher is registered with NO GitHub environment, and neither job below declares one.
 #
 # ─────────────────────────────────────────────────────────────────────────────────────────
-# READ THIS BEFORE THE FIRST RELEASE — the first publish CANNOT use this rail.
+# WHY TWO JOBS
 # ─────────────────────────────────────────────────────────────────────────────────────────
-# npm has no "pending publisher". A trusted publisher is attached to an EXISTING package, so
-# a name that has never been published has nothing to attach it to. This is a fact about npm,
-# not a gap in this workflow, and no amount of retrying a tag push will get around it.
+# Until 0.1.2 this file called ci's reusable ts-publish.yml: ONE job that held
+# `id-token: write` while it ran `pnpm install`, the gate, the build, and
+# `npm install -g npm@latest`. Every dev dependency's install script, test, and build plugin
+# — and whatever npm shipped as `latest` that minute — ran next to the publish credential and
+# could mint it. And any `v*` tag, on any commit of any branch, fired it.
 #
-# So `@edgeproc/errors@0.1.0` has to go out ONCE by hand, from an authenticated session
-# (`npm publish --access public` with a granular write token or an OTP). Only after the
-# package exists can the trusted publisher be registered in the package's npm settings — and
-# from then on every release is a `v*` tag push through here, token-free.
+#   build   — `contents: read` only. Proves the tagged commit is on `main` and that the tag
+#             names the package.json version, runs the full gate from the frozen lockfile,
+#             packs the tarball, and uploads it with its checksum. All dependency code runs
+#             HERE, where there is no credential to steal.
+#   publish — `id-token: write`. Never checks out, never installs, never runs repository or
+#             dependency code. It downloads the exact tarball `build` packed, checks its
+#             checksum, and hands it to the npm CLI that ships inside the pinned Node release.
 #
-# The bootstrap, in order:
-#   1. Make this repository PUBLIC. `provenance: true` below signs each release into a
-#      PUBLIC transparency log, which npm refuses to do for a private source repo. The repo
-#      is private as of this commit; flip it before tagging or the publish fails.
-#   2. Publish 0.1.0 by hand, authenticated. (One time, for this package name only.)
-#   3. Register the trusted publisher on npmjs.com: package settings -> Trusted Publisher ->
-#      GitHub Actions -> owner `hseshadr`, repo `errors`, workflow file `publish.yml`.
-#   4. Every release after that: bump the version, land it on `main`, push `vX.Y.Z`. Done.
+# npm >= 11.5.1 is required for OIDC. The pinned Node release below bundles npm 11.19.0, so
+# no npm is installed at publish time; the job asserts the floor instead of trusting it.
 #
-# Two more npm truths this caller encodes (see ts-publish.yml in hseshadr/ci):
-#   * A published version is immutable. 0.1.0 cannot be re-published to add provenance or fix
-#     a mistake — the next release must carry a HIGHER version. Re-tagging v0.1.0 just 403s.
+# Three npm truths this workflow encodes:
+#   * A published version is immutable. A failed or wrong release needs a HIGHER version;
+#     re-tagging the same version just 403s.
 #   * `package.json` `repository.url` MUST match this GitHub repo exactly or the OIDC publish
 #     fails with ENEEDAUTH. It does today: git+https://github.com/hseshadr/errors.git.
+#   * `--provenance` signs into a PUBLIC transparency log, so this repository must stay public.
 #
-# WHY THE PIN IS A SHA, NOT `@ci-v3`: a tag can be repointed at new code; a 40-char commit
-# SHA cannot. That matters most here, because this job holds `id-token: write` — a mutable
-# ref anywhere in the chain reaches npm. The trailing comment records which release the SHA
-# is, so Dependabot's `github-actions` ecosystem bumps the pin and the comment together, and
-# `test/workflow-security.test.ts` fails the gate if any ref here is ever left unpinned.
+# Every `uses:` is a full 40-char commit SHA with the release in a trailing comment, so
+# Dependabot bumps pin and comment together; `test/workflow-security.test.ts` fails the gate
+# if a ref is left unpinned, if the jobs stop being split, or if an expression is ever
+# interpolated into a shell script.
 name: Publish (npm, OIDC)
 
 on:
   push:
     tags: ["v*"]
 
-# Top-level is read-only. The OIDC scope is granted on the publish job alone — the ci repo's
-# security policy forbids a top-level `id-token` grant, because a top-level scope applies to
-# every job in the file, including ones added later that have no business minting a token.
+# Top-level is read-only. The OIDC scope is granted on the publish job alone: a top-level
+# scope applies to every job in the file, including ones added later.
 permissions:
   contents: read
 
+# Never run two releases of the same ref at once, and never cancel one mid-publish.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  build:
+    name: Verify tag, gate, and pack (no publish credential)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes; do not leave the token in .git/config.
+          persist-credentials: false
+          # Full history, so the tagged commit can be tested against main's history.
+          fetch-depth: 0
+
+      - name: Require the tagged commit to be on main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tagged commit $GITHUB_SHA is not on main. Release only from main."
+            exit 1
+          fi
+
+      - name: Install pnpm
+        # Version comes from package.json "packageManager" — one pin, no drift.
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.21.0"
+          # No dependency cache in a release workflow: a cache written by another
+          # workflow run must never feed the artefact that gets published.
+          package-manager-cache: false
+
+      - name: Require the tag to name the package.json version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')"
+          if [ "$RELEASE_TAG" != "v$version" ]; then
+            echo "::error::Tag $RELEASE_TAG does not match package.json version v$version."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        # pnpm-workspace.yaml names the only dependencies allowed to run builds.
+        run: pnpm install --frozen-lockfile
+
+      - name: Gate (the exact local command — lint, typecheck, 100% coverage, build)
+        run: pnpm gate
+
+      - name: Pack the release tarball
+        run: |
+          pnpm pack --pack-destination release
+          cd release
+          shopt -s nullglob
+          tarballs=(*.tgz)
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one tarball, found ${#tarballs[@]}."
+            exit 1
+          fi
+          sha256sum "${tarballs[0]}" > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-tarball-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
+    name: Publish the packed tarball via npm OIDC
+    needs: build
+    runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC — this token IS the npm credential. Nothing else may hold it.
       contents: read
-    uses: hseshadr/ci/.github/workflows/ts-publish.yml@605e51cbc86f452b56edcf1c9660921da797cbfe # ci-v3.2.1
-    with:
-      working-directory: "."
-      node-version: "24"
-      # Mirrors ci.yml exactly. pnpm-workspace.yaml names the only dependencies
-      # allowed to run install-time builds.
-      install-args: "--frozen-lockfile"
-      # The gate is lint -> typecheck -> vitest (100% coverage enforced) -> build, with no
-      # browser dependency, so re-running it from the TAGGED ref is cheap and is the only
-      # thing that proves the artefact being published is the artefact that passed.
-      run-gate: true
-      # Requires a PUBLIC repo — see step 1 of the bootstrap above.
-      provenance: true
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-tarball-${{ github.sha }}
+          path: release
+
+      - name: Setup Node (bundles the npm CLI that publishes)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.21.0"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Require an OIDC-capable npm (>= 11.5.1)
+        run: |
+          npm --version
+          node -e '
+            const version = process.argv[1];
+            const [major, minor, patch] = version.split(".").map(Number);
+            const ok = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)));
+            if (!ok) { console.error("npm " + version + " cannot publish via OIDC"); process.exit(1); }
+          ' "$(npm --version)"
+
+      - name: Verify the tarball is the one build packed
+        working-directory: release
+        run: sha256sum --check --strict SHA256SUMS
+
+      - name: Publish to npm (OIDC Trusted Publishing, with provenance)
+        run: |
+          shopt -s nullglob
+          tarballs=(release/*.tgz)
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one tarball, found ${#tarballs[@]}."
+            exit 1
+          fi
+          npm publish "${tarballs[0]}" --provenance --access public
+
+      # A green `npm publish` is not the same fact as "the registry serves it". Ask it.
+      - name: Verify the release is actually on npm
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          for attempt in $(seq 1 30); do
+            if [ "$(npm view "@edgeproc/errors@$version" version 2>/dev/null)" = "$version" ]; then
+              echo "npm serves @edgeproc/errors@$version"
+              exit 0
+            fi
+            echo "attempt $attempt/30: @edgeproc/errors@$version not visible yet"
+            sleep 10
+          done
+          echo "::error::@edgeproc/errors@$version never appeared on npm."
+          exit 1
