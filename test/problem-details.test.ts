@@ -124,3 +124,112 @@ describe("toProblemDetails — reserved RFC 9457 members", () => {
     expect(pd).toEqual({ type: "app.detail", title: "Failed: disk full" });
   });
 });
+
+// Params are caller data and often reach this function straight from
+// `JSON.parse`. Each member name or value below could hijack the serialized
+// body: `toJSON` replaces it wholesale, `__proto__`/`constructor`/`prototype`
+// are prototype-shaped names, and a non-string/non-finite value is outside the
+// declared `ParamValue` contract (and a bigint makes `JSON.stringify` throw).
+describe("toProblemDetails — hostile params", () => {
+  const code = "ai.provider.out_of_credits";
+  const base = {
+    type: code,
+    title: registry.describe(code),
+    status: 402,
+  };
+  const wire = (params: unknown): unknown =>
+    JSON.parse(
+      JSON.stringify(registry.toProblemDetails(code, params as never)),
+    );
+
+  it("never lets a toJSON param replace the serialized body", () => {
+    const forged = {
+      toJSON: () => ({ type: "evil", status: 200, detail: "x" }),
+      creditsLeft: 0,
+    };
+    const pd = registry.toProblemDetails(code, forged as never);
+    expect(Object.hasOwn(pd, "toJSON")).toBe(false);
+    expect(JSON.parse(JSON.stringify(pd))).toEqual({ ...base, creditsLeft: 0 });
+  });
+
+  it("drops a toJSON param even when it is a plain string", () => {
+    expect(wire({ toJSON: "x", a: "b" })).toEqual({ ...base, a: "b" });
+  });
+
+  it("keeps a JSON.parse `__proto__` object off the wire", () => {
+    const params = JSON.parse('{"__proto__":{"isAdmin":true},"a":"b"}');
+    const pd = registry.toProblemDetails(code, params);
+    expect(Object.hasOwn(pd, "__proto__")).toBe(false);
+    expect(Object.getPrototypeOf(pd)).toBe(Object.prototype);
+    expect((pd as Record<string, unknown>).isAdmin).toBeUndefined();
+    expect(JSON.stringify(pd)).not.toContain("__proto__");
+    expect(JSON.stringify(pd)).not.toContain("isAdmin");
+    expect(wire(params)).toEqual({ ...base, a: "b" });
+  });
+
+  it.each(["__proto__", "constructor", "prototype", "toJSON"])(
+    "drops the prototype-shaped member name %s even with a string value",
+    (name) => {
+      const params = JSON.parse(`{${JSON.stringify(name)}:"x","a":"b"}`);
+      const pd = registry.toProblemDetails(code, params);
+      expect(Object.hasOwn(pd, name)).toBe(false);
+      expect(wire(params)).toEqual({ ...base, a: "b" });
+    },
+  );
+
+  it.each<[string, unknown]>([
+    ["an object", { nested: true }],
+    ["an array", [1, 2]],
+    ["a boolean", true],
+    ["null", null],
+    ["undefined", undefined],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["-Infinity", Number.NEGATIVE_INFINITY],
+    ["a bigint", 10n],
+    ["a function", () => "x"],
+    ["a symbol", Symbol("x")],
+  ])("drops a param whose value is %s", (_label, value) => {
+    const pd = registry.toProblemDetails(code, { bad: value, ok: 1 } as never);
+    expect(Object.hasOwn(pd, "bad")).toBe(false);
+    expect(pd).toEqual({ ...base, ok: 1 });
+    expect(() => JSON.stringify(pd)).not.toThrow();
+  });
+
+  it("keeps strings and finite numbers, including empty and zero", () => {
+    expect(wire({ s: "", n: 0, f: -1.5, big: Number.MAX_VALUE })).toEqual({
+      ...base,
+      s: "",
+      n: 0,
+      f: -1.5,
+      big: Number.MAX_VALUE,
+    });
+  });
+
+  it("still excludes non-enumerable and symbol-keyed params", () => {
+    const params: Record<string | symbol, unknown> = { visible: "yes" };
+    Object.defineProperty(params, "hidden", {
+      value: "no",
+      enumerable: false,
+    });
+    params[Symbol("sym")] = "no";
+    expect(registry.toProblemDetails(code, params as never)).toEqual({
+      ...base,
+      visible: "yes",
+    });
+  });
+
+  it("still hands dropped names and values to the title template", () => {
+    const reg = defineErrors({
+      "app.proto": {
+        category: "internal",
+        en: "ctor={constructor} bad={bad}",
+      },
+    });
+    const pd = reg.toProblemDetails("app.proto", {
+      constructor: "C",
+      bad: Number.NaN,
+    });
+    expect(pd).toEqual({ type: "app.proto", title: "ctor=C bad=NaN" });
+  });
+});
