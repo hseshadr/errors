@@ -138,7 +138,11 @@ export interface ProblemDetails {
   instance?: string;
   /** A human-readable explanation specific to this occurrence. */
   detail?: string;
-  /** Extension members (the error's params). */
+  /**
+   * Extension members: every param except the reserved `type`, `title`,
+   * `status`, `detail`, and `instance`, which params can never supply. These
+   * are public — they go on the wire verbatim, so never pass secrets as params.
+   */
   [member: string]: ParamValue | undefined;
 }
 
@@ -156,9 +160,9 @@ export interface ProblemOptions {
 export interface Registry<C extends Catalog = Catalog> {
   /** Every registered code, in registration order. */
   readonly codes: readonly string[];
-  /** Whether a code is registered. */
+  /** Whether a code is registered (own entries only). */
   has(code: string): boolean;
-  /** The entry for a code, or `undefined`. */
+  /** The entry for a code, or `undefined` — never an inherited `Object.prototype` member. */
   get(code: string): CatalogEntry | undefined;
   /** Turn a raw transport/LLM failure into a code (this registry's fallback). */
   classify(raw: unknown): ErrorCode;
@@ -171,7 +175,11 @@ export interface Registry<C extends Catalog = Catalog> {
   ): string;
   describe(code: ErrorCode, params?: Params, t?: TFunction): string;
 
-  /** Serialize a code to the RFC 9457 Problem Details shape. */
+  /**
+   * Serialize a code to the RFC 9457 Problem Details shape. Params become
+   * public extension members, except the reserved `type`, `title`, `status`,
+   * `detail`, and `instance`, which are dropped from the spread.
+   */
   toProblemDetails<K extends keyof C & string>(
     code: K,
     params?: ParamsFor<C, K>,

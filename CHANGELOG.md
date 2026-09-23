@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Prototype-name lookups.** `get`, `describe`, `toProblemDetails`, and
+  `create` read the catalog with a plain `map[code]`, so `get("constructor")`
+  returned `Object.prototype.constructor` while `has("constructor")` correctly
+  said `false`. Every lookup is now own-property only, and the merged catalog
+  has a null prototype, so a fragment that registers its own `__proto__` code
+  (e.g. from `JSON.parse`) keeps it as an entry instead of rewriting the
+  prototype.
+
+### Security
+
+- **Reserved Problem Details members.** `toProblemDetails` spread caller params
+  into the RFC 9457 body, so a param named `status`, `detail`, or `instance`
+  could appear as that core member (`type` and `title` were already overwritten).
+  Params named `type`, `title`, `status`, `detail`, or `instance` are now
+  dropped from the body; they still reach `describe` for title interpolation.
+  All other params remain public extension members, as now documented. The
+  shape of a body built from non-reserved params is unchanged.
+
 ## [0.1.1] - 2026-08-03
 
 **The code is byte-identical to 0.1.0. Nothing was added, fixed, or removed.**

@@ -71,3 +71,56 @@ describe("toProblemDetails — RFC 9457 conformance", () => {
     expect(typeof pd.title).toBe("string");
   });
 });
+
+describe("toProblemDetails — reserved RFC 9457 members", () => {
+  const reserved = {
+    type: "https://attacker.example/forged",
+    title: "Forged title",
+    status: 200,
+    detail: "Forged detail",
+    instance: "/forged",
+  };
+
+  it("never lets params supply type, title, status, detail, or instance", () => {
+    const pd = registry.toProblemDetails("ai.provider.out_of_credits", {
+      ...reserved,
+      creditsLeft: 0,
+    });
+    expect(pd).toEqual({
+      type: "ai.provider.out_of_credits",
+      title: registry.describe("ai.provider.out_of_credits"),
+      status: 402,
+      creditsLeft: 0,
+    });
+  });
+
+  it("does not let a param fill a reserved member the registry leaves unset", () => {
+    const pd = registry.toProblemDetails("internal.unknown", reserved);
+    expect(pd).toEqual({
+      type: "internal.unknown",
+      title: registry.describe("internal.unknown"),
+    });
+  });
+
+  it("still takes status and instance from options, not params", () => {
+    const pd = registry.toProblemDetails("internal.unknown", reserved, {
+      status: 500,
+      instance: "/v1/jobs/7",
+    });
+    expect(pd.status).toBe(500);
+    expect(pd.instance).toBe("/v1/jobs/7");
+    expect("detail" in pd).toBe(false);
+  });
+
+  it("keeps a reserved-named param available to the title template", () => {
+    const reg = defineErrors({
+      "app.detail": {
+        category: "internal",
+        en: "Failed: {detail}",
+        params: ["detail"],
+      },
+    });
+    const pd = reg.toProblemDetails("app.detail", { detail: "disk full" });
+    expect(pd).toEqual({ type: "app.detail", title: "Failed: disk full" });
+  });
+});
