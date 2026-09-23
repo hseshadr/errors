@@ -169,7 +169,10 @@ jobs:
             echo "::error::Expected exactly one tarball, found ${#tarballs[@]}."
             exit 1
           fi
-          npm publish "${tarballs[0]}" --provenance --access public
+          # `./` is load-bearing: npm parses a bare `release/x.tgz` as the
+          # GitHub shorthand `release/x.tgz` and clones it over SSH. v0.1.2
+          # failed exactly there (exit 128, Permission denied (publickey)).
+          npm publish "./${tarballs[0]}" --provenance --access public
 
       # A green `npm publish` is not the same fact as "the registry serves it". Ask it.
       - name: Verify the release is actually on npm
