@@ -87,8 +87,14 @@ function buildStatusIndex(map: Catalog): Map<number, string> {
   return index;
 }
 
+/**
+ * Merged catalogs have a null prototype, so a fragment's own `__proto__` code
+ * becomes an own entry instead of rewriting the object's prototype, and no
+ * `Object.prototype` member (`constructor`, `toString`, …) is ever reachable
+ * as if it were a registered entry.
+ */
 function mergeCatalogs(fragments: readonly Catalog[]): Catalog {
-  const merged: Record<string, CatalogEntry> = {};
+  const merged: Record<string, CatalogEntry> = Object.create(null);
   for (const fragment of fragments) {
     for (const [code, entry] of Object.entries(fragment)) {
       if (Object.hasOwn(merged, code)) throw new DuplicateCodeError(code);
@@ -144,6 +150,28 @@ export function defineErrorsWith(
   return createRegistry(catalog, fallbackCode);
 }
 
+/**
+ * RFC 9457 members the registry owns. Params never supply them: `type` and
+ * `title` come from the catalog, `status` and `instance` from options, and
+ * `detail` is not emitted. Every other param becomes a public extension member.
+ */
+const RESERVED_PROBLEM_MEMBERS: ReadonlySet<string> = new Set([
+  "type",
+  "title",
+  "status",
+  "detail",
+  "instance",
+]);
+
+/** Copy `params` minus the reserved RFC 9457 members. */
+function extensionMembers(params?: Params): Record<string, ParamValue> {
+  const members: Record<string, ParamValue> = Object.create(null);
+  for (const [name, value] of Object.entries(params ?? {})) {
+    if (!RESERVED_PROBLEM_MEMBERS.has(name)) members[name] = value;
+  }
+  return members;
+}
+
 function createRegistry<C extends Catalog>(
   catalog: C,
   fallbackCode: ErrorCode,
@@ -153,6 +181,11 @@ function createRegistry<C extends Catalog>(
   const matchers = collectMatchers(map);
   const statusIndex = buildStatusIndex(map);
   const statusRanges = collectStatusRanges(map);
+
+  /** Own-property lookup: an unregistered code never resolves to an inherited member. */
+  function entryOf(code: string): CatalogEntry | undefined {
+    return Object.hasOwn(map, code) ? map[code] : undefined;
+  }
 
   /** First registered range containing `status` — the tier below the exact table. */
   function codeForStatusRange(status: number): string | undefined {
@@ -179,7 +212,7 @@ function createRegistry<C extends Catalog>(
   }
 
   function describe(code: ErrorCode, params?: Params, t?: TFunction): string {
-    const entry = map[code];
+    const entry = entryOf(code);
     const values: Record<string, ParamValue> = { ...(params ?? {}) };
     const key = entry?.i18nKey ?? `errors.${code}`;
     if (t) {
@@ -195,11 +228,10 @@ function createRegistry<C extends Catalog>(
     params?: Params,
     options?: ProblemOptions,
   ): ProblemDetails {
-    const entry = map[code];
-    const values: Record<string, ParamValue> = { ...(params ?? {}) };
+    const entry = entryOf(code);
     const status = options?.status ?? entry?.httpStatus?.[0];
     const problem: ProblemDetails = {
-      ...values,
+      ...extensionMembers(params),
       type: entry?.problemType ?? code,
       title: options?.title ?? describe(code, params),
     };
@@ -209,14 +241,14 @@ function createRegistry<C extends Catalog>(
   }
 
   function create(code: ErrorCode, params?: Params): CanonicalError {
-    const category = map[code]?.category ?? "internal";
+    const category = entryOf(code)?.category ?? "internal";
     return new CanonicalError(code, category, params);
   }
 
   const registry = {
     codes,
     has: (code: string): boolean => Object.hasOwn(map, code),
-    get: (code: string): CatalogEntry | undefined => map[code],
+    get: entryOf,
     classify,
     describe,
     toProblemDetails,

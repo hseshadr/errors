@@ -149,6 +149,13 @@ errors.toProblemDetails("http.rate_limited", { retryAfter: 30 });
 `status` comes from the entry's first registered `httpStatus`; pass
 `{ status }` in the third argument to override it.
 
+Every other param becomes a **public extension member** on the wire, so never
+pass anything you would not show the client. The RFC 9457 core members are
+reserved: a param named `type`, `title`, `status`, `detail`, or `instance` is
+dropped from the body (it can still fill a `{placeholder}` in the title). `type`
+and `title` always come from the catalog, `status` and `instance` only from the
+third argument, and `detail` is never emitted.
+
 ### Throw a coded error when you already know the cause
 
 ```ts
@@ -335,7 +342,9 @@ const errors = defineErrorsWith(
 
 `Registry` methods: `classify(raw)`, `describe(code, params?, t?)`,
 `toProblemDetails(code, params?, opts?)`, `create(code, params?)`, plus
-`codes` / `has` / `get`.
+`codes` / `has` / `get`. Every lookup is own-property only: an unregistered
+name such as `"constructor"` or `"__proto__"` is simply unregistered, never an
+inherited `Object.prototype` member.
 
 `CatalogEntry` fields: `category` (required), `en`, `params`, `i18nKey`,
 `httpStatus`, `httpStatusRange`, `problemType`, `match`, `priority`.
