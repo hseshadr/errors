@@ -179,8 +179,9 @@ describe("dependency security audit", () => {
 
   it("states the package boundary before the catalog reference", () => {
     const readme = readFileSync(README, "utf8");
-    const limits = readme.indexOf("## Scope and limits");
-    const catalogs = readme.indexOf("## Which pack should you start from?");
+    // The first screen's "Not for" line is the boundary (README template).
+    const limits = readme.indexOf("- **Not for** — ");
+    const catalogs = readme.indexOf("### Which pack should you start from?");
 
     expect(limits).toBeGreaterThan(0);
     expect(limits).toBeLessThan(catalogs);
@@ -335,6 +336,42 @@ function jobsOf(yaml: string): ReadonlyMap<string, string> {
   return jobs;
 }
 
+// PUBLISH TARGET — `npm publish <arg>` does not treat `<arg>` as a filename.
+// npm runs it through package-spec parsing first, where a bare `a/b` is a
+// GitHub shorthand: `npm publish release/pkg-0.1.2.tgz` resolved to the repo
+// `release/pkg-0.1.2.tgz` and died on `git ls-remote ssh://git@github.com/...`
+// (Permission denied (publickey)), exit 128 — the release never reached npm.
+// Only a path-anchored spec (`./`, `../`, `/`, `~/`) is read as a local file.
+// The anchor may sit on the argument or inside the glob it expands from, so
+// the rule resolves one `${arr[0]}` hop before judging.
+
+/** A spec npm reads as a local file rather than a registry/GitHub shorthand. */
+const isLocalPathSpec = (spec: string): boolean =>
+  /^(?:\.{1,2}\/|\/|~\/)/.test(spec);
+
+/** The positional argument of `npm publish`, or null when it publishes the cwd. */
+function publishSpec(script: string): string | null {
+  const args = /npm publish\s+([^\n]*)/.exec(script)?.[1];
+  if (args === undefined) return null;
+  const first = args.trim().split(/\s+/)[0] ?? "";
+  if (first === "" || first.startsWith("-")) return null;
+  return first.replace(/^["']|["']$/g, "");
+}
+
+/** `${name[0]}` resolved through its `name=(glob)` assignment in the same script. */
+function resolveArrayRef(spec: string, script: string): string {
+  const name = /^\$\{(\w+)\[0\]\}$/.exec(spec)?.[1];
+  if (name === undefined) return spec;
+  return new RegExp(`${name}=\\(([^)]*)\\)`).exec(script)?.[1]?.trim() ?? spec;
+}
+
+/** The spec npm actually parses, after one array-expansion hop. */
+function effectivePublishSpec(script: string): string | null {
+  const spec = publishSpec(script);
+  if (spec === null || isLocalPathSpec(spec)) return spec;
+  return resolveArrayRef(spec, script);
+}
+
 describe("release pipeline (publish.yml)", () => {
   const publishYaml = (): string =>
     readFileSync(join(WORKFLOWS, "publish.yml"), "utf8");
@@ -364,9 +401,19 @@ describe("release pipeline (publish.yml)", () => {
     expect(publish).not.toContain("pnpm");
     expect(publish).not.toMatch(/npm (?:install|i|ci)\b/);
     expect(publish).toContain("actions/download-artifact@");
+    // INVERTED 2026-09-23: this line previously pinned the unanchored spec
+    // `"${tarballs[0]}"` as the contract. That spec is the v0.1.2 release
+    // failure, so the assertion was encoding the defect as the requirement.
     expect(publish).toMatch(
-      /npm publish "\$\{tarballs\[0\]\}" --provenance --access public/,
+      /npm publish "\.\/\$\{tarballs\[0\]\}" --provenance --access public/,
     );
+  });
+
+  it("publishes a local path, not a spec npm resolves as a GitHub repo", () => {
+    const publish = jobsOf(publishYaml()).get("publish") ?? "";
+    const spec = effectivePublishSpec(publish);
+    expect(spec).not.toBeNull();
+    expect(isLocalPathSpec(spec ?? "")).toBe(true);
   });
 
   it("refuses a tag that is not on main or does not name the version", () => {
@@ -448,5 +495,45 @@ describe("the release-pipeline helpers themselves", () => {
       "echo one",
       "          echo two\n\n          echo three",
     ]);
+  });
+
+  it("accepts only path-anchored publish specs", () => {
+    for (const ok of ["./release/p.tgz", "../p.tgz", "/tmp/p.tgz", "~/p.tgz"]) {
+      expect(isLocalPathSpec(ok)).toBe(true);
+    }
+    // The v0.1.2 failure, plus the other shapes npm resolves off-disk.
+    for (const bad of [
+      "release/p.tgz",
+      "p.tgz",
+      "@edgeproc/errors",
+      "user/repo",
+    ]) {
+      expect(isLocalPathSpec(bad)).toBe(false);
+    }
+  });
+
+  it("reads the publish argument, ignoring flags and quotes", () => {
+    expect(publishSpec('npm publish "./release/p.tgz" --provenance')).toBe(
+      "./release/p.tgz",
+    );
+    expect(publishSpec("npm publish 'a/b.tgz'")).toBe("a/b.tgz");
+    // A bare directory publish has no positional target, and that is legal.
+    expect(publishSpec("npm publish --access public")).toBeNull();
+    expect(publishSpec("pnpm gate")).toBeNull();
+  });
+
+  it("resolves the publish spec through its glob before judging it", () => {
+    const unanchored = 'tarballs=(release/*.tgz)\nnpm publish "${tarballs[0]}"';
+    expect(effectivePublishSpec(unanchored)).toBe("release/*.tgz");
+    expect(isLocalPathSpec(effectivePublishSpec(unanchored) ?? "")).toBe(false);
+
+    // Anchoring either the argument or the glob fixes it; both must pass.
+    const onArg = 'tarballs=(release/*.tgz)\nnpm publish "./${tarballs[0]}"';
+    expect(effectivePublishSpec(onArg)).toBe("./${tarballs[0]}");
+    const onGlob = 'tarballs=(./release/*.tgz)\nnpm publish "${tarballs[0]}"';
+    expect(effectivePublishSpec(onGlob)).toBe("./release/*.tgz");
+    for (const fixed of [onArg, onGlob]) {
+      expect(isLocalPathSpec(effectivePublishSpec(fixed) ?? "")).toBe(true);
+    }
   });
 });
