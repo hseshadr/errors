@@ -34,7 +34,7 @@ jobs:
     # `# ci-v3` would silently go wrong the moment upstream moves that tag.
     # Pinning is transitive and holds here: at this SHA the brick's own two
     # `uses:` refs (actions/checkout, gitleaks/gitleaks-action) are both SHAs.
-    uses: hseshadr/ci/.github/workflows/secret-scan.yml@19632645594c7c51f3e7e38a24630daf2db06f69 # ci-v3.2.1
+    uses: hseshadr/ci/.github/workflows/secret-scan.yml@605e51cbc86f452b56edcf1c9660921da797cbfe # ci-v3.2.1
 
   gate:
     runs-on: ubuntu-latest
