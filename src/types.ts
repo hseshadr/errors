@@ -139,9 +139,11 @@ export interface ProblemDetails {
   /** A human-readable explanation specific to this occurrence. */
   detail?: string;
   /**
-   * Extension members: every param except the reserved `type`, `title`,
-   * `status`, `detail`, and `instance`, which params can never supply. These
-   * are public — they go on the wire verbatim, so never pass secrets as params.
+   * Extension members: every own, enumerable param whose value is a string or
+   * a finite number, except the reserved `type`, `title`, `status`, `detail`,
+   * and `instance` and the unsafe names `toJSON`, `__proto__`, `constructor`,
+   * and `prototype`, which params can never supply. These are public — they go
+   * on the wire verbatim, so never pass secrets as params.
    */
   [member: string]: ParamValue | undefined;
 }
@@ -178,7 +180,9 @@ export interface Registry<C extends Catalog = Catalog> {
   /**
    * Serialize a code to the RFC 9457 Problem Details shape. Params become
    * public extension members, except the reserved `type`, `title`, `status`,
-   * `detail`, and `instance`, which are dropped from the spread.
+   * `detail`, and `instance`, the unsafe names `toJSON`, `__proto__`,
+   * `constructor`, and `prototype`, and any value that is not a string or a
+   * finite number, which are all dropped from the body.
    */
   toProblemDetails<K extends keyof C & string>(
     code: K,

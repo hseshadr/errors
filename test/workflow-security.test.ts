@@ -278,3 +278,175 @@ describe("the token-scope rule itself", () => {
     expect(hasReadOnlyTopLevelScope(yaml)).toBe(true);
   });
 });
+
+// RELEASE PIPELINE — the npm credential is the short-lived OIDC token a job
+// with `id-token: write` can mint. The first OIDC pipeline here called ci's
+// reusable ts-publish.yml, which ran `pnpm install`, the gate, and the build in
+// the SAME job that held that scope, then `npm install -g npm@latest`: every dev
+// dependency's install script, test, and build plugin — and whatever npm
+// published as `latest` that minute — could mint a token and publish as this
+// package. And ANY `v*` tag, on any commit, fired it.
+//
+// The split: an unprivileged `build` job proves the tag (on main, names the
+// package.json version) and produces the tarball; a `publish` job that never
+// checks out or installs anything publishes exactly that tarball. The file
+// name stays `publish.yml` because npm's trusted publisher is bound to it.
+
+/** The body of every `run:` step, inline or block scalar. */
+function runScripts(yaml: string): readonly string[] {
+  const lines = yaml.split("\n");
+  const scripts: string[] = [];
+  lines.forEach((line, i) => {
+    const m = /^(\s*)(?:-\s+)?run:\s*(.*)$/.exec(line);
+    if (!m) return;
+    const indent = m[1]?.length ?? 0;
+    const inline = m[2] ?? "";
+    if (!/^[|>]/.test(inline)) {
+      scripts.push(inline);
+      return;
+    }
+    const body: string[] = [];
+    for (const next of lines.slice(i + 1)) {
+      if (next.trim() !== "" && next.search(/\S/) <= indent) break;
+      body.push(next);
+    }
+    scripts.push(body.join("\n"));
+  });
+  return scripts;
+}
+
+/**
+ * Whether an executable (non-comment) line installs or uses `@latest`. Comments
+ * may name the pattern they forbid.
+ */
+const hasFloatingLatest = (yaml: string): boolean =>
+  yaml
+    .split("\n")
+    .some((line) => !/^\s*#/.test(line) && /@latest\b/.test(line));
+
+/** Each job under `jobs:`, keyed by its id, as raw YAML text. */
+function jobsOf(yaml: string): ReadonlyMap<string, string> {
+  const jobs = new Map<string, string>();
+  const section = yaml.split(/^jobs:\s*$/m)[1] ?? "";
+  const parts = section.split(/^ {2}([\w-]+):\s*$/m);
+  for (let i = 1; i < parts.length; i += 2) {
+    jobs.set(parts[i] ?? "", parts[i + 1] ?? "");
+  }
+  return jobs;
+}
+
+describe("release pipeline (publish.yml)", () => {
+  const publishYaml = (): string =>
+    readFileSync(join(WORKFLOWS, "publish.yml"), "utf8");
+
+  it("keeps the trusted-publisher filename and the v* tag trigger", () => {
+    expect(publishYaml()).toMatch(/^on:\n {2}push:\n {4}tags: \["v\*"\]/m);
+  });
+
+  it("no longer delegates to a reusable workflow", () => {
+    expect(publishYaml()).not.toMatch(/uses:\s*[^\s#]*\.github\/workflows\//);
+  });
+
+  it("splits an unprivileged build from the credentialed publish", () => {
+    const jobs = jobsOf(publishYaml());
+    expect([...jobs.keys()]).toEqual(["build", "publish"]);
+    const build = jobs.get("build") ?? "";
+    const publish = jobs.get("publish") ?? "";
+    expect(build).toMatch(/permissions:\n\s+contents: read\n/);
+    expect(build).not.toContain("id-token");
+    expect(publish).toMatch(/needs: build\n/);
+    expect(publish).toMatch(/id-token: write/);
+  });
+
+  it("grants id-token only to the job that never checks out or installs", () => {
+    const publish = jobsOf(publishYaml()).get("publish") ?? "";
+    expect(publish).not.toContain("actions/checkout");
+    expect(publish).not.toContain("pnpm");
+    expect(publish).not.toMatch(/npm (?:install|i|ci)\b/);
+    expect(publish).toContain("actions/download-artifact@");
+    expect(publish).toMatch(
+      /npm publish "\$\{tarballs\[0\]\}" --provenance --access public/,
+    );
+  });
+
+  it("refuses a tag that is not on main or does not name the version", () => {
+    const build = runScripts(jobsOf(publishYaml()).get("build") ?? "").join(
+      "\n",
+    );
+    expect(build).toMatch(
+      /git fetch --no-tags origin \+refs\/heads\/main:refs\/remotes\/origin\/main/,
+    );
+    expect(build).toContain(
+      'git merge-base --is-ancestor "$GITHUB_SHA" origin/main',
+    );
+    expect(build).toContain('"$RELEASE_TAG" != "v$version"');
+    expect(publishYaml()).toMatch(/RELEASE_TAG: \$\{\{ github\.ref_name \}\}/);
+  });
+
+  it("gates and packs from the frozen lockfile before publishing", () => {
+    const build = runScripts(jobsOf(publishYaml()).get("build") ?? "").join(
+      "\n",
+    );
+    for (const step of [
+      "pnpm install --frozen-lockfile",
+      "pnpm gate",
+      "pnpm pack --pack-destination release",
+    ]) {
+      expect(build).toContain(step);
+    }
+  });
+
+  it("never interpolates an expression into a shell script", () => {
+    const injected = runScripts(publishYaml()).filter((s) => s.includes("${{"));
+    expect(injected).toEqual([]);
+  });
+
+  it("uses no dependency cache in the release workflow", () => {
+    expect(publishYaml()).not.toMatch(/^\s+cache:/m);
+    expect(publishYaml().match(/package-manager-cache: false/g)).toHaveLength(
+      2,
+    );
+  });
+
+  it("installs no floating tool version in any workflow", () => {
+    const floating = readWorkflows()
+      .filter(({ yaml }) => hasFloatingLatest(yaml))
+      .map(({ file }) => file);
+    expect(floating).toEqual([]);
+  });
+});
+
+describe("the release-pipeline helpers themselves", () => {
+  it("flags @latest on an executable line but not in a comment", () => {
+    expect(hasFloatingLatest("      - run: npm i -g npm@latest\n")).toBe(true);
+    expect(hasFloatingLatest("# npm@latest is forbidden\n")).toBe(false);
+    expect(hasFloatingLatest("      - run: npm i -g npm@11.19.0\n")).toBe(
+      false,
+    );
+  });
+
+  it("splits jobs by their two-space id lines", () => {
+    const yaml = "on: push\njobs:\n  a:\n    x: 1\n  b-c:\n    y: 2\n";
+    expect([...jobsOf(yaml).entries()]).toEqual([
+      ["a", "\n    x: 1\n"],
+      ["b-c", "\n    y: 2\n"],
+    ]);
+  });
+
+  it("reads inline and block-scalar run steps, stopping at dedent", () => {
+    const yaml = [
+      "    steps:",
+      "      - run: echo one",
+      "      - name: two",
+      "        run: |",
+      "          echo two",
+      "",
+      "          echo three",
+      "      - uses: x/y@z",
+    ].join("\n");
+    expect(runScripts(yaml)).toEqual([
+      "echo one",
+      "          echo two\n\n          echo three",
+    ]);
+  });
+});

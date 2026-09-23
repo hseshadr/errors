@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-23
+
 ### Fixed
 
 - **Prototype-name lookups.** `get`, `describe`, `toProblemDetails`, and
@@ -26,6 +28,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dropped from the body; they still reach `describe` for title interpolation.
   All other params remain public extension members, as now documented. The
   shape of a body built from non-reserved params is unchanged.
+- **Hostile param names and values.** A param named `toJSON` was spread into
+  the body as a member, so `JSON.stringify` called it and the caller's object
+  replaced the whole serialized Problem Details, including all five RFC 9457
+  core members. Params from `JSON.parse` could also put `__proto__` (with an
+  object value), `constructor`, or `prototype` on the wire. `toProblemDetails`
+  now never emits a param named `toJSON`, `__proto__`, `constructor`, or
+  `prototype`, and emits a param only when its value is a string or a finite
+  number, which is the declared `ParamValue` type. Objects, arrays, booleans,
+  `null`, `undefined`, `NaN`, `±Infinity`, bigints (which made
+  `JSON.stringify` throw), functions, and symbols are dropped from the body.
+  This is a behaviour change only for callers that passed values outside
+  `ParamValue`. Symbol-keyed and non-enumerable params were already excluded
+  and still are. `describe` still receives every param for title
+  interpolation. This matches the filter going into the Python mirror in
+  edgeproc-core.
+- **Prototype-pollution hardening (defense in depth).** The members of
+  catalog entries (`problemType`, `i18nKey`, `en`, `httpStatus`,
+  `httpStatusRange`, `match`, `priority`, `category`) and of
+  `toProblemDetails` options (`status`, `title`, `instance`) were read through
+  the prototype chain. If other code in the process polluted
+  `Object.prototype`, those values leaked into `classify`, `describe`,
+  `create`, and Problem Details bodies. For example, a polluted `match` claimed
+  every raw failure for the first registered code. They are now read as own
+  properties only. The raw-failure helpers (`httpStatusOf`, `errorNameOf`,
+  `errorTextOf`) still read through the prototype chain on purpose, because a
+  fetch `Response` exposes `status` as an inherited getter.
+- **Release pipeline no longer exposes the npm publish credential to
+  dependency code.** `publish.yml` called ci's reusable `ts-publish.yml`: one
+  job held `id-token: write` (the npm OIDC credential) while it ran
+  `pnpm install`, the gate, the build, and an unpinned
+  `npm install -g npm@latest`. Any `v*` tag on any commit triggered it.
+  `publish.yml` (same file name, so the npm trusted publisher still matches) is
+  now two local jobs:
+  - An unprivileged `build` job (`contents: read`) refuses a tag whose commit
+    is not on `main` or whose name is not `v` + the `package.json` version. It
+    then runs `pnpm install --frozen-lockfile`, `pnpm gate`, and `pnpm pack`,
+    and uploads the tarball with its SHA-256.
+  - A `publish` job holds `id-token: write`. It never checks out or installs
+    anything. It verifies the checksum and publishes that exact tarball with
+    `npm publish --provenance --access public`, using the npm bundled with a
+    pinned Node 24.21.0 (npm 11.19.0; the job asserts the OIDC floor of
+    11.5.1).
+
+  `test/workflow-security.test.ts` now fails the gate if this split, the
+  tag checks, or the no-`${{ }}`-in-shell rule regress, or if any workflow
+  uses `@latest`.
 
 ## [0.1.1] - 2026-08-03
 

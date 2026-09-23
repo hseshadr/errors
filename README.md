@@ -156,6 +156,20 @@ dropped from the body (it can still fill a `{placeholder}` in the title). `type`
 and `title` always come from the catalog, `status` and `instance` only from the
 third argument, and `detail` is never emitted.
 
+Params often arrive straight from `JSON.parse`, so the body is also guarded:
+
+- A param named `toJSON`, `__proto__`, `constructor`, or `prototype` is never
+  emitted — a `toJSON` param would otherwise replace the whole serialized body.
+- Only a string or a **finite** number (the declared `ParamValue`) reaches the
+  wire. Objects, arrays, booleans, `null`, `NaN`/`Infinity`, bigints, and
+  functions are dropped.
+- Only own, enumerable, string-keyed params are read. Catalog entries and the
+  third-argument options are read as own properties too, so a polluted
+  `Object.prototype` elsewhere in the process cannot inject a status, title,
+  `type`, or match rule.
+
+Dropped params still reach `describe` for title interpolation.
+
 ### Throw a coded error when you already know the cause
 
 ```ts

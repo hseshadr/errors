@@ -33,6 +33,23 @@ export class UnregisteredFallbackError extends Error {
   }
 }
 
+/**
+ * Read an optional member as an OWN property only. Catalog entries and
+ * `ProblemOptions` are caller-supplied plain objects, so a plain `obj.key` read
+ * would fall through to `Object.prototype` — and if anything else in the host
+ * process pollutes it, an attacker's value would silently become a match rule,
+ * a status, or a wire member. An absent own member is simply `undefined`.
+ */
+function own<T extends object, K extends keyof T>(
+  obj: T | null | undefined,
+  key: K,
+): T[K] | undefined {
+  // `null` is not in the types, but untyped callers passed it and `?.` took it.
+  return obj !== undefined && obj !== null && Object.hasOwn(obj, key)
+    ? obj[key]
+    : undefined;
+}
+
 /** Replace `{name}` placeholders in a default-English template. */
 function interpolate(
   template: string,
@@ -57,8 +74,10 @@ interface Matcher {
 function collectMatchers(map: Catalog): ReadonlyArray<Matcher> {
   const matchers: Matcher[] = [];
   for (const [code, entry] of Object.entries(map)) {
-    const match = entry.match;
-    if (match) matchers.push({ code, match, priority: entry.priority ?? 0 });
+    const match = own(entry, "match");
+    if (match) {
+      matchers.push({ code, match, priority: own(entry, "priority") ?? 0 });
+    }
   }
   // Array.prototype.sort is stable, which is what preserves registration order.
   return matchers.sort((a, b) => b.priority - a.priority);
@@ -70,7 +89,7 @@ function collectStatusRanges(
 ): ReadonlyArray<readonly [string, readonly [number, number]]> {
   const ranges: Array<readonly [string, readonly [number, number]]> = [];
   for (const [code, entry] of Object.entries(map)) {
-    const range = entry.httpStatusRange;
+    const range = own(entry, "httpStatusRange");
     if (range) ranges.push([code, range]);
   }
   return ranges;
@@ -80,7 +99,7 @@ function collectStatusRanges(
 function buildStatusIndex(map: Catalog): Map<number, string> {
   const index = new Map<number, string>();
   for (const [code, entry] of Object.entries(map)) {
-    for (const status of entry.httpStatus ?? []) {
+    for (const status of own(entry, "httpStatus") ?? []) {
       if (!index.has(status)) index.set(status, code);
     }
   }
@@ -163,13 +182,56 @@ const RESERVED_PROBLEM_MEMBERS: ReadonlySet<string> = new Set([
   "instance",
 ]);
 
-/** Copy `params` minus the reserved RFC 9457 members. */
+/**
+ * Names that can never be an extension member, whatever their value. `toJSON`
+ * would let one param replace the entire serialized body (`JSON.stringify`
+ * calls it); `__proto__`, `constructor`, and `prototype` are prototype-shaped
+ * names that `JSON.parse` hands back as ordinary own keys. The Python mirror in
+ * edgeproc-core reserves the same prototype-shaped names.
+ */
+const UNSAFE_MEMBER_NAMES: ReadonlySet<string> = new Set([
+  "toJSON",
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
+
+/**
+ * A value that may go on the wire: exactly the declared `ParamValue` — a string
+ * or a FINITE number. Anything else (objects, arrays, booleans, `null`,
+ * `NaN`/`Infinity`, bigint, functions, symbols) is outside the type contract,
+ * could smuggle structure into the body, or makes `JSON.stringify` throw.
+ */
+function isWireValue(value: unknown): value is ParamValue {
+  return (
+    typeof value === "string" ||
+    (typeof value === "number" && Number.isFinite(value))
+  );
+}
+
+/**
+ * Copy `params` minus the reserved RFC 9457 members, the unsafe member names,
+ * and any value that is not a string or finite number. Only own, enumerable,
+ * string-keyed params are considered (`Object.entries`), so symbol and
+ * non-enumerable keys never reach the wire. `describe` still receives the
+ * unfiltered params for title interpolation.
+ */
 function extensionMembers(params?: Params): Record<string, ParamValue> {
   const members: Record<string, ParamValue> = Object.create(null);
   for (const [name, value] of Object.entries(params ?? {})) {
-    if (!RESERVED_PROBLEM_MEMBERS.has(name)) members[name] = value;
+    if (RESERVED_PROBLEM_MEMBERS.has(name)) continue;
+    if (UNSAFE_MEMBER_NAMES.has(name)) continue;
+    if (isWireValue(value)) members[name] = value;
   }
   return members;
+}
+
+/** The entry's first own `httpStatus`, never an inherited array or index. */
+function firstStatus(entry: CatalogEntry | undefined): number | undefined {
+  const statuses = own(entry, "httpStatus");
+  return statuses !== undefined && statuses.length > 0
+    ? statuses[0]
+    : undefined;
 }
 
 function createRegistry<C extends Catalog>(
@@ -214,12 +276,12 @@ function createRegistry<C extends Catalog>(
   function describe(code: ErrorCode, params?: Params, t?: TFunction): string {
     const entry = entryOf(code);
     const values: Record<string, ParamValue> = { ...(params ?? {}) };
-    const key = entry?.i18nKey ?? `errors.${code}`;
+    const key = own(entry, "i18nKey") ?? `errors.${code}`;
     if (t) {
       const localized = t(key, values);
       if (localized !== key) return localized;
     }
-    const template = entry?.en;
+    const template = own(entry, "en");
     return template === undefined ? code : interpolate(template, values);
   }
 
@@ -229,19 +291,20 @@ function createRegistry<C extends Catalog>(
     options?: ProblemOptions,
   ): ProblemDetails {
     const entry = entryOf(code);
-    const status = options?.status ?? entry?.httpStatus?.[0];
+    const status = own(options, "status") ?? firstStatus(entry);
     const problem: ProblemDetails = {
       ...extensionMembers(params),
-      type: entry?.problemType ?? code,
-      title: options?.title ?? describe(code, params),
+      type: own(entry, "problemType") ?? code,
+      title: own(options, "title") ?? describe(code, params),
     };
     if (status !== undefined) problem.status = status;
-    if (options?.instance !== undefined) problem.instance = options.instance;
+    const instance = own(options, "instance");
+    if (instance !== undefined) problem.instance = instance;
     return problem;
   }
 
   function create(code: ErrorCode, params?: Params): CanonicalError {
-    const category = entryOf(code)?.category ?? "internal";
+    const category = own(entryOf(code), "category") ?? "internal";
     return new CanonicalError(code, category, params);
   }
 
