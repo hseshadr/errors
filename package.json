@@ -1,6 +1,6 @@
 {
   "name": "@edgeproc/errors",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "Turns any error your app hits into one stable code and one clear message, for developers tired of mismatched error text.",
   "keywords": [
