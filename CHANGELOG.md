@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-23
+
 ### Changed
 
 - **README follows the portfolio template.** A plain-language first screen
@@ -25,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.2] - 2026-09-23
 
 ### Fixed
+
+- **The release pipeline could not publish.** `npm publish` was handed
+  `release/<pkg>.tgz`; npm parses a relative path with one interior slash as a
+  GitHub `owner/repo` shorthand and tried to clone it over SSH, failing with
+  exit 128. The argument is now `./`-anchored. This never affected installed
+  code — only whether a release reached the registry.
 
 - **Prototype-name lookups.** `get`, `describe`, `toProblemDetails`, and
   `create` read the catalog with a plain `map[code]`, so `get("constructor")`
