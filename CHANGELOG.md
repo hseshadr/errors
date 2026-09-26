@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-26
+
+A minor release: one new export (`InvalidCatalogEntryError`) and a stricter
+`httpStatus` check at definition time. Nothing that worked before breaks,
+except a catalog whose `httpStatus` could never match (see Fixed).
+
 ### Changed
 
 - **README rewritten in plain English.** It now says who the package is for,

@@ -1,7 +1,7 @@
 # API guide
 
 Everything `@edgeproc/errors` exports, with examples. For how `classify` decides
-and why, see [Architecture](ARCHITECTURE.md). All examples run against v0.1.3,
+and why, see [Architecture](ARCHITECTURE.md). All examples run against v0.2.0,
 the current version on npm.
 
 ## The smallest loop
