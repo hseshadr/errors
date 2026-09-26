@@ -31,6 +31,12 @@ const DEPENDABOT = fileURLToPath(
   new URL("../.github/dependabot.yml", import.meta.url),
 );
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
+const GETTING_STARTED = fileURLToPath(
+  new URL("../docs/GETTING_STARTED.md", import.meta.url),
+);
+const ARCHITECTURE = fileURLToPath(
+  new URL("../docs/ARCHITECTURE.md", import.meta.url),
+);
 
 /** Matches `uses: <ref>` / `- uses: <ref>`, stopping before a trailing comment. */
 const USES = /^\s*(?:-\s*)?uses:\s*([^\s#]+)/gm;
@@ -171,22 +177,25 @@ describe("dependency security audit", () => {
     expect(config.match(/interval:\s*weekly/g)).toHaveLength(2);
   });
 
-  it("documents the install-time supply-chain controls", () => {
-    const readme = readFileSync(README, "utf8");
-    expect(readme).toContain("24-hour quarantine");
-    expect(readme).toMatch(/native-build\s+allowlist/);
+  it("documents the install-time supply-chain controls for developers", () => {
+    const guide = readFileSync(GETTING_STARTED, "utf8");
+    expect(guide).toContain("24-hour quarantine");
+    expect(guide).toMatch(/native-build\s+allowlist/);
   });
 
   it("states the package boundary before the catalog reference", () => {
     const readme = readFileSync(README, "utf8");
-    // The first screen's "Not for" line is the boundary (README template).
-    const limits = readme.indexOf("- **Not for** — ");
-    const catalogs = readme.indexOf("### Which pack should you start from?");
+    // The intro says what the package will not do before the reader meets
+    // the lists of codes, and the limits get their own section.
+    const boundary = readme.indexOf("does not log, retry, or report errors");
+    const catalogs = readme.indexOf("## Which list of codes to start from");
 
-    expect(limits).toBeGreaterThan(0);
-    expect(limits).toBeLessThan(catalogs);
-    expect(readme).toContain("does not log, retry, or report errors for you");
-    expect(readme).toContain("No roadmap feature is implied");
+    expect(boundary).toBeGreaterThan(0);
+    expect(catalogs).toBeGreaterThan(0);
+    expect(boundary).toBeLessThan(catalogs);
+    expect(readme).toContain("## What it does not do");
+    const architecture = readFileSync(ARCHITECTURE, "utf8");
+    expect(architecture).toContain("No roadmap feature is implied");
   });
 });
 

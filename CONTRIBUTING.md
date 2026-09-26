@@ -5,6 +5,9 @@ change ships with a test, and `pnpm gate` is green.
 
 ## Setup
 
+New here? [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) walks you from a
+fresh clone to a first change, with a map of the code.
+
 You need Node >= 22.13 and pnpm. The exact Node version CI uses is 24.
 
 ```bash

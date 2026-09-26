@@ -1,6 +1,16 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // The README's example imports the package by name. Point that name at src/
+  // so test/readme.contract.test.ts runs the example against this commit.
+  resolve: {
+    alias: {
+      "@edgeproc/errors": fileURLToPath(
+        new URL("src/index.ts", import.meta.url),
+      ),
+    },
+  },
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
