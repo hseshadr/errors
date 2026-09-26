@@ -215,7 +215,8 @@ Dropped params still reach `describe` for title interpolation.
   at all (no network, no filesystem, no environment access). It only matches the
   values you pass in against the catalog you registered.
 - **What it refuses:** registering the same code twice across fragments throws
-  `DuplicateCodeError`. A configured fallback code missing from your catalog
+  `DuplicateCodeError`. An `httpStatus` that is not a list of whole numbers
+  (`408` instead of `[408]`) throws `InvalidCatalogEntryError`, naming the code. A configured fallback code missing from your catalog
   throws `UnregisteredFallbackError` at startup, rather than returning a code
   your registry cannot describe. `toProblemDetails` drops hostile params (see
   above) instead of putting them on the wire.

@@ -34,3 +34,20 @@ export class DuplicateCodeError extends Error {
     this.name = "DuplicateCodeError";
   }
 }
+
+/**
+ * Thrown by `defineErrors` / `defineErrorsWith` when a catalog entry has the
+ * wrong shape, e.g. `httpStatus: 408` instead of `httpStatus: [408]`. Caught at
+ * definition time so a typo never becomes a crash deep inside `classify` or a
+ * rule that silently never matches.
+ */
+export class InvalidCatalogEntryError extends Error {
+  /** The code whose entry is malformed. */
+  readonly code: string;
+
+  constructor(code: string, problem: string) {
+    super(`Error code "${code}": ${problem}`);
+    this.name = "InvalidCatalogEntryError";
+    this.code = code;
+  }
+}

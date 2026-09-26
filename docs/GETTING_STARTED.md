@@ -126,8 +126,9 @@ A typical small change: teach `corePack` a new rule, or add a code. Say you want
    ```
 
 4. Make it pass: in `src/starter-pack.ts`, add `httpStatus: [408],` to the
-   `request.timeout` entry of `corePack`. `httpStatus` is a list, so a plain
-   `408` would crash every registry that uses `corePack`. Run the file again
+   `request.timeout` entry of `corePack`. `httpStatus` is a list: a plain
+   `408` makes every registry that uses `corePack` throw
+   `InvalidCatalogEntryError` at startup. Run the file again
    and it passes.
 
 5. Run `pnpm gate` (one more test than before). If a test that pins pack

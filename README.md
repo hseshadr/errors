@@ -36,11 +36,14 @@ It does not log, retry, or report errors. Your app still decides what to do with
 import { aiPack, corePack, defineErrorsWith } from "@edgeproc/errors";
 
 // Your app's list of error codes: 10 everyday ones + 9 for calling an AI service.
+// Both lists claim some statuses (401, 404, 429, 5xx, timeouts). The list you
+// pass first wins those, so here a 429 is http.rate_limited, not the ai.* code.
 const errors = defineErrorsWith({}, corePack, aiPack);
 
-// Three raw failures, the way they actually reach a catch block.
+// Four raw failures, the way they actually reach a catch block.
 const failures = [
   { status: 402 }, // fetch() got "402 Payment Required"
+  { status: 429 }, // fetch() got "429 Too Many Requests"
   new TypeError("Failed to fetch"), // the network dropped
   { status: 418, message: "I'm a teapot" }, // something nobody planned for
 ];
@@ -53,22 +56,38 @@ for (const raw of failures) {
 // The same error as a JSON body your API can send back.
 const body = errors.toProblemDetails("ai.provider.out_of_credits");
 console.log(JSON.stringify(body));
+
+// An Error you can throw. Its .message is the code, so logs stay searchable.
+// The sentence comes from describe().
+const err = errors.create("config.missing", { field: "API_KEY" });
+console.log(err.message);
+console.log(errors.describe(err.code, err.params));
 ```
 
-3. Run `node try.mjs`. This is the real output from version 0.1.3, the current
-   version on npm:
+3. Run `node try.mjs`. This is the real output from the code in this
+   repository:
 
 ```text
 ai.provider.out_of_credits   Your provider account is out of credits. Add credits and try again.
+http.rate_limited            Too many requests. Wait a moment and try again.
 net.unreachable              Couldn't reach the server. Check your connection and try again.
 internal.unknown             Something went wrong. Try again.
 {"type":"ai.provider.out_of_credits","title":"Your provider account is out of credits. Add credits and try again.","status":402}
+config.missing
+A required setting is missing: API_KEY.
 ```
 
-Each failure got one code and one sentence. The teapot matched nothing, so it
-fell back to `internal.unknown` instead of showing a raw error. The last line is
-the standard error format for web APIs (RFC 9457, "Problem Details"), ready to
-send from a server.
+Each failure got one code and one sentence. The 429 went to `corePack`'s
+`http.rate_limited` because `corePack` is listed first (see
+[Which list of codes to start from](#which-list-of-codes-to-start-from)). The
+teapot matched nothing, so it fell back to `internal.unknown` instead of showing
+a raw error. The JSON line is the standard error format for web APIs (RFC 9457,
+"Problem Details"), ready to send from a server.
+
+The last two lines are an error you can `throw`. Its `.message` is the code
+(`config.missing`), not the sentence, so the same failure always logs the same
+searchable text. To show the sentence, call
+`errors.describe(err.code, err.params)`.
 
 To show the sentence in another language, pass your own translation function
 (for example i18next's `t`) as the third argument to `describe`. The
@@ -96,11 +115,18 @@ every code yourself.
 | `bundlePack`  | 5     | Your app downloads and checks a file on the device, such as a model or a data set. |
 | `starterPack` | 18    | Only for the older apps that already use it. New code should use `corePack`. |
 
-Order matters when two lists claim the same status. In the example above,
-`corePack` comes first, so a 429 becomes `http.rate_limited` and only the 402
-reaches `aiPack`. If a registry only handles calls to an AI provider, put
-`aiPack` first and a 429 becomes `ai.provider.rate_limited`. The
-[Architecture](docs/ARCHITECTURE.md) doc explains the exact rules.
+Lists combine: every code from every list you pass is registered. If two lists
+define the same code, you get a `DuplicateCodeError` when the app starts, never a
+silent winner. Order only matters when two different codes claim the same
+status. In the example above, `corePack` comes first, so a 429 becomes
+`http.rate_limited` and only the 402 reaches `aiPack`. If a registry only
+handles calls to an AI provider, put `aiPack` first and a 429 becomes
+`ai.provider.rate_limited`. The [Architecture](docs/ARCHITECTURE.md) doc lists
+every status the two share.
+
+`aiPack` has no catch-all code, so `defineErrorsWith({}, aiPack)` on its own
+throws and tells you to add `corePack` or pick one of your codes as the
+`fallbackCode`.
 
 ## What it does not do
 

@@ -121,8 +121,12 @@ errors.classify({ weird: true }); // "shop.unknown"
 
 `defineErrorsWith` checks that the fallback code is in your catalog. If not, it
 throws `UnregisteredFallbackError` at startup. This also means `aiPack` on its
-own throws, because it does not include `internal.unknown`. Add `corePack` or
-set a `fallbackCode`.
+own throws, because it does not include `internal.unknown`. The error says so and
+names both fixes: add `corePack`, or set a `fallbackCode` that `aiPack` has:
+
+```ts
+defineErrorsWith({ fallbackCode: "ai.provider.server_error" }, aiPack);
+```
 
 `defineErrors(...fragments)` is the older entry point. It always falls back to
 `internal.unknown` and does not check it.
@@ -198,6 +202,7 @@ Everything else is your catalog.
 | `starterPack`                                  | const | The original 18 codes, frozen for the repos that vendor them        |
 | `CanonicalError`                               | class | `Error` subclass carrying `{ code, params, category }`              |
 | `DuplicateCodeError`                           | class | Thrown when a code is defined in two fragments                      |
+| `InvalidCatalogEntryError`                     | class | Thrown when an entry has the wrong shape, e.g. `httpStatus: 408` instead of `[408]` |
 | `errorNameOf` / `errorTextOf` / `httpStatusOf` | fn    | Helpers for writing your own `match` rules                          |
 
 `Registry` methods: `classify(raw)`, `describe(code, params?, t?)`,

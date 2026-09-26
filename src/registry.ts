@@ -1,4 +1,8 @@
-import { CanonicalError, DuplicateCodeError } from "./canonical-error.js";
+import {
+  CanonicalError,
+  DuplicateCodeError,
+  InvalidCatalogEntryError,
+} from "./canonical-error.js";
 import { httpStatusOf } from "./raw.js";
 import type {
   Catalog,
@@ -26,8 +30,12 @@ const PLACEHOLDER = /\{(\w+)\}/g;
  */
 export class UnregisteredFallbackError extends Error {
   constructor(code: string) {
+    const where =
+      code === DEFAULT_FALLBACK_CODE
+        ? `Add a list that registers it (corePack does)`
+        : `Add "${code}" to one of the lists you pass`;
     super(
-      `Fallback code "${code}" is not registered in this catalog. classify() would return a code this registry does not contain.`,
+      `Fallback code "${code}" is not registered in this catalog, so classify() would return a code this registry does not contain. ${where}, or set fallbackCode to a code you do register.`,
     );
     this.name = "UnregisteredFallbackError";
   }
@@ -107,6 +115,22 @@ function buildStatusIndex(map: Catalog): Map<number, string> {
 }
 
 /**
+ * `httpStatus` is a list. A bare number (`httpStatus: 408`) used to crash with
+ * "own is not iterable" deep inside registry construction, and a non-integer
+ * item (`["408"]`) made a rule that could never match. Both are rejected here,
+ * naming the code, so the fix is obvious.
+ */
+function assertHttpStatusList(code: string, entry: CatalogEntry): void {
+  const statuses: unknown = own(entry, "httpStatus");
+  if (statuses === undefined) return;
+  if (Array.isArray(statuses) && statuses.every(Number.isInteger)) return;
+  throw new InvalidCatalogEntryError(
+    code,
+    `httpStatus must be a list of whole-number HTTP statuses, like [408]. Got ${JSON.stringify(statuses)}.`,
+  );
+}
+
+/**
  * Merged catalogs have a null prototype, so a fragment's own `__proto__` code
  * becomes an own entry instead of rewriting the object's prototype, and no
  * `Object.prototype` member (`constructor`, `toString`, …) is ever reachable
@@ -117,6 +141,7 @@ function mergeCatalogs(fragments: readonly Catalog[]): Catalog {
   for (const fragment of fragments) {
     for (const [code, entry] of Object.entries(fragment)) {
       if (Object.hasOwn(merged, code)) throw new DuplicateCodeError(code);
+      assertHttpStatusList(code, entry);
       merged[code] = entry;
     }
   }

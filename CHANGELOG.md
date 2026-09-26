@@ -23,6 +23,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/GETTING_STARTED.md`: from a fresh clone to a passing build and a first
   change, with every command run and timed.
 - `examples/try.mjs`, the README example.
+- `InvalidCatalogEntryError` (exported), with a `code` property naming the
+  entry at fault.
+
+### Fixed
+
+- **`httpStatus: 408` crashed with "own is not iterable".** A bare number
+  instead of a list crashed deep inside registry construction, and a list
+  holding a non-integer (`["408"]`) made a rule that could never match.
+  `defineErrors` and `defineErrorsWith` now reject both at definition time
+  with `InvalidCatalogEntryError`:
+  `Error code "x.timeout": httpStatus must be a list of whole-number HTTP statuses, like [408]. Got 408.`
+  The accepted shape is unchanged (`readonly number[]`). A catalog with a
+  non-integer status item used to register silently and now throws. That item
+  never matched anything, so this only surfaces a rule that was already dead.
+- **`defineErrorsWith({}, aiPack)` threw an error that did not say what to do.**
+  `aiPack` has no catch-all code, so the default fallback `internal.unknown`
+  is missing. That is still an error, but `UnregisteredFallbackError` now
+  names both fixes: add a list that registers it (`corePack` does), or set
+  `fallbackCode` to a code you register. For a fallback you chose yourself it
+  says to add that code instead.
+
+### Documented
+
+- **Pack composition.** Lists passed to `defineErrors` / `defineErrorsWith`
+  combine: every code is registered, and a code defined twice throws
+  `DuplicateCodeError`. When two different codes claim the same status (both
+  `corePack` and `aiPack` claim 401, 403, 404, 429, 5xx and timeouts), the list
+  passed first wins. This was already the behavior. The README now says it next
+  to the example, the example shows a 429, and a test pins every shared status
+  in both orders.
+- **`CanonicalError.message` is the code, on purpose.** It keeps log lines
+  stable and searchable. The README now says so and shows
+  `errors.describe(err.code, err.params)` for the sentence. No behavior change.
 
 ## [0.1.3] - 2026-09-23
 

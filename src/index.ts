@@ -6,7 +6,11 @@
  * Zero runtime dependencies; i18next is an optional peer (you pass its `t`).
  */
 
-export { CanonicalError, DuplicateCodeError } from "./canonical-error.js";
+export {
+  CanonicalError,
+  DuplicateCodeError,
+  InvalidCatalogEntryError,
+} from "./canonical-error.js";
 export { errorNameOf, errorTextOf, httpStatusOf } from "./raw.js";
 export {
   DEFAULT_FALLBACK_CODE,
