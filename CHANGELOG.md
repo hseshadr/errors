@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **README rewritten in plain English.** It now says who the package is for,
+  the problem it solves, a runnable example with its real output, honest
+  limits, and when to use something else. The deep reference moved to
+  `docs/ARCHITECTURE.md` and `docs/API.md`. The npm `description` matches the
+  new first line. The npmjs.com page picks this up on the next publish.
+- `test/readme.contract.test.ts` now pins the new section order, the links to
+  the technical docs, a banned-jargon list, and that the README's example
+  output is exactly what `examples/try.mjs` prints.
+
+### Added
+
+- `docs/GETTING_STARTED.md`: from a fresh clone to a passing build and a first
+  change, with every command run and timed.
+- `examples/try.mjs`, the README example.
+
 ## [0.1.3] - 2026-09-23
 
 ### Changed
